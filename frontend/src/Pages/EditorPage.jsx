@@ -45,11 +45,6 @@ function EditorPageContent() {
     const starter = saved?.nodes?.length ? saved : createStarterSchema();
 
     const sqlEditorRef = useRef(null);
-
-    /*
-      canvas — последнее изменение пришло из canvas / панели свойств
-      code   — последнее изменение пришло из текстового редактора
-    */
     const changeSourceRef = useRef("canvas");
 
     const [projectName, setProjectName] = useState(
@@ -63,6 +58,7 @@ function EditorPageContent() {
     const [edges, setEdges, onEdgesChangeBase] = useEdgesState(starter.edges);
 
     const [selectedNodeId, setSelectedNodeId] = useState(null);
+    const [selectedEdgeId, setSelectedEdgeId] = useState(null);
 
     const [schemaCode, setSchemaCode] = useState(() =>
         generateDBML(starter.nodes, starter.edges)
@@ -73,6 +69,9 @@ function EditorPageContent() {
 
     const selectedTable =
         nodes.find((node) => node.id === selectedNodeId) || null;
+
+    const selectedRelation =
+        edges.find((edge) => edge.id === selectedEdgeId) || null;
 
     const sql = useMemo(() => {
         return generateSQL(nodes, edges, dialect);
@@ -90,11 +89,37 @@ function EditorPageContent() {
 
     const visibleEdges = useMemo(() => {
         return edges.map((edge) => {
+            const isSelectedEdge = edge.id === selectedEdgeId;
+
             const isRelatedToSelectedTable =
                 selectedNodeId &&
                 (edge.source === selectedNodeId || edge.target === selectedNodeId);
 
-            if (!selectedNodeId) {
+            if (isSelectedEdge) {
+                return {
+                    ...edge,
+                    animated: true,
+                    className: "edge-electric",
+                    style: {
+                        ...(edge.style || {}),
+                        stroke: "#f59e0b",
+                        strokeWidth: 4,
+                        opacity: 1
+                    },
+                    labelStyle: {
+                        ...(edge.labelStyle || {}),
+                        fill: "#92400e",
+                        fontWeight: 900
+                    },
+                    labelBgStyle: {
+                        ...(edge.labelBgStyle || {}),
+                        fill: "#fef3c7",
+                        fillOpacity: 0.98
+                    }
+                };
+            }
+
+            if (!selectedNodeId && !selectedEdgeId) {
                 return {
                     ...edge,
                     animated: false,
@@ -164,7 +189,7 @@ function EditorPageContent() {
                 }
             };
         });
-    }, [edges, selectedNodeId]);
+    }, [edges, selectedNodeId, selectedEdgeId]);
 
     useEffect(() => {
         applyTheme(theme);
@@ -180,11 +205,6 @@ function EditorPageContent() {
         });
     }, [projectName, dialect, nodes, edges]);
 
-    /*
-      Если изменения пришли из canvas — обновляем код слева.
-      Если изменения пришли из кода — НЕ трогаем schemaCode.
-      Это и решает проблему отката текста.
-    */
     useEffect(() => {
         if (changeSourceRef.current !== "canvas") {
             return;
@@ -194,11 +214,6 @@ function EditorPageContent() {
         setSchemaErrors([]);
     }, [nodes, edges]);
 
-    /*
-      Live-парсинг кода.
-      Код слева не перезаписываем.
-      Только обновляем nodes/edges, если текст валиден.
-    */
     useEffect(() => {
         if (changeSourceRef.current !== "code") {
             return;
@@ -225,6 +240,14 @@ function EditorPageContent() {
 
                 return stillExists ? currentSelectedNodeId : null;
             });
+
+            setSelectedEdgeId((currentSelectedEdgeId) => {
+                const stillExists = parsed.edges.some((edge) => {
+                    return edge.id === currentSelectedEdgeId;
+                });
+
+                return stillExists ? currentSelectedEdgeId : null;
+            });
         }, 450);
 
         return () => {
@@ -244,6 +267,8 @@ function EditorPageContent() {
 
             changeSourceRef.current = "canvas";
             setEdges((currentEdges) => addEdge(edge, currentEdges));
+            setSelectedNodeId(null);
+            setSelectedEdgeId(edge.id);
         },
         [setEdges]
     );
@@ -284,9 +309,15 @@ function EditorPageContent() {
         changeSourceRef.current = "canvas";
         setNodes((currentNodes) => [...currentNodes, node]);
         setSelectedNodeId(node.id);
+        setSelectedEdgeId(null);
     }
 
     function deleteSelected() {
+        if (selectedEdgeId) {
+            deleteRelation(selectedEdgeId);
+            return;
+        }
+
         if (!selectedNodeId) {
             return;
         }
@@ -304,6 +335,7 @@ function EditorPageContent() {
         );
 
         setSelectedNodeId(null);
+        setSelectedEdgeId(null);
     }
 
     function updateTable(updatedTable) {
@@ -349,6 +381,34 @@ function EditorPageContent() {
         );
     }
 
+    function updateRelation(updatedRelation) {
+        changeSourceRef.current = "canvas";
+
+        setEdges((currentEdges) =>
+            currentEdges.map((edge) => {
+                if (edge.id !== updatedRelation.id) {
+                    return edge;
+                }
+
+                return {
+                    ...edge,
+                    ...updatedRelation,
+                    label: updatedRelation.data?.relationType || updatedRelation.label
+                };
+            })
+        );
+    }
+
+    function deleteRelation(relationId) {
+        changeSourceRef.current = "canvas";
+
+        setEdges((currentEdges) =>
+            currentEdges.filter((edge) => edge.id !== relationId)
+        );
+
+        setSelectedEdgeId(null);
+    }
+
     function exportJson() {
         const content = JSON.stringify(
             {
@@ -380,6 +440,7 @@ function EditorPageContent() {
         setNodes(schema.nodes);
         setEdges(schema.edges);
         setSelectedNodeId(null);
+        setSelectedEdgeId(null);
         setSchemaErrors([]);
         setSchemaCode(generateDBML(schema.nodes, schema.edges));
     }
@@ -415,6 +476,7 @@ function EditorPageContent() {
 
         const node = nodes.find((item) => item.data.name === tableName);
         setSelectedNodeId(node?.id || null);
+        setSelectedEdgeId(null);
 
         requestAnimationFrame(() => {
             textarea.focus();
@@ -426,6 +488,22 @@ function EditorPageContent() {
 
             textarea.scrollTop = Math.max(0, lineNumber * lineHeight - 80);
         });
+    }
+
+    function handleNodeClick(_, node) {
+        setSelectedNodeId(node.id);
+        setSelectedEdgeId(null);
+    }
+
+    function handleEdgeClick(event, edge) {
+        event.stopPropagation();
+        setSelectedEdgeId(edge.id);
+        setSelectedNodeId(null);
+    }
+
+    function handlePaneClick() {
+        setSelectedNodeId(null);
+        setSelectedEdgeId(null);
     }
 
     return (
@@ -444,7 +522,7 @@ function EditorPageContent() {
                 <Sidebar
                     onAddTable={addTable}
                     onDeleteSelected={deleteSelected}
-                    selectedTable={selectedTable}
+                    selectedTable={selectedTable || selectedRelation}
                 />
 
                 <SqlEditor
@@ -463,8 +541,9 @@ function EditorPageContent() {
                             onNodesChange={onNodesChange}
                             onEdgesChange={onEdgesChange}
                             onConnect={onConnect}
-                            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-                            onPaneClick={() => setSelectedNodeId(null)}
+                            onNodeClick={handleNodeClick}
+                            onEdgeClick={handleEdgeClick}
+                            onPaneClick={handlePaneClick}
                             nodesDraggable={true}
                             nodesConnectable={true}
                             nodesFocusable={true}
@@ -502,10 +581,13 @@ function EditorPageContent() {
 
                 <PropertiesPanel
                     selectedTable={selectedTable}
+                    selectedRelation={selectedRelation}
                     dialect={dialect}
                     onDialectChange={setDialect}
                     onUpdateTable={updateTable}
                     onDeleteField={deleteField}
+                    onUpdateRelation={updateRelation}
+                    onDeleteRelation={deleteRelation}
                 />
             </div>
 
