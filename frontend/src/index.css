@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-app-bg: #f6f7f9;
+  --color-app-panel: #ffffff;
+  --color-app-border: #e5e7eb;
+  --color-app-text: #111827;
+  --color-app-muted: #6b7280;
+  --color-app-dark: #0f172a;
+
+  --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+  color: #111827;
+  font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background: #020617;
+  color: #f8fafc;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.auth-input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auth-input:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 4px #dbeafe;
+}
+
+.dark .auth-input {
+  border-color: #334155;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.dark .auth-input::placeholder {
+  color: #64748b;
+}
+
+.dark .auth-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(30, 64, 175, 0.35);
+}
+
+/* React Flow */
+
+.react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.react-flow__renderer {
+  width: 100%;
+  height: 100%;
+}
+
+.react-flow__pane {
+  cursor: grab;
+}
+
+.react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+.react-flow__node {
+  cursor: grab;
+  pointer-events: all;
+}
+
+.react-flow__node.dragging {
+  cursor: grabbing;
+}
+
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid white;
+  background: #2563eb;
+  pointer-events: all;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__controls {
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.react-flow__minimap {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.dark .react-flow__controls {
+  background: #0f172a;
+  border: 1px solid #334155;
+}
+
+.dark .react-flow__controls button {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-bottom: 1px solid #334155;
+}
+
+.dark .react-flow__minimap {
+  background: #0f172a;
+  border: 1px solid #334155;
+}
+
+.dark .react-flow__attribution {
+  background: #0f172a;
+  color: #94a3b8;
+}
+
+/* Custom scrollbars */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Dark theme scrollbars */
+
+.dark * {
+  scrollbar-color: #475569 transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background: #475569;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Electric animated edges */
+
+.edge-electric .react-flow__edge-path {
+  stroke-dasharray: 10 8;
+  animation: electric-flow 0.65s linear infinite;
+  filter:
+          drop-shadow(0 0 4px rgba(14, 165, 233, 0.65))
+          drop-shadow(0 0 10px rgba(59, 130, 246, 0.35));
+}
+
+.edge-electric .react-flow__edge-text {
+  font-weight: 800;
+}
+
+.edge-muted .react-flow__edge-path {
+  transition: opacity 0.2s ease, stroke 0.2s ease;
+}
+
+@keyframes electric-flow {
+  from {
+    stroke-dashoffset: 18;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.dark .edge-electric .react-flow__edge-path {
+  filter:
+          drop-shadow(0 0 5px rgba(56, 189, 248, 0.8))
+          drop-shadow(0 0 14px rgba(14, 165, 233, 0.45));
+}
+
+.schema-line-numbers {
+  scrollbar-width: none;
+}
+
+.schema-line-numbers::-webkit-scrollbar {
+  display: none;
+}

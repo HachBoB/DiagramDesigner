@@ -1,0 +1,522 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactFlow, {
+    Background,
+    Controls,
+    MiniMap,
+    ReactFlowProvider,
+    addEdge,
+    useEdgesState,
+    useNodesState
+} from "reactflow";
+
+import TableNode from "../nodes/TableNode.jsx";
+import TopBar from "../components/TopBar.jsx";
+import Sidebar from "../components/Sidebar.jsx";
+import SqlEditor from "../components/SqlEditor.jsx";
+import PropertiesPanel from "../components/PropertiesPanel.jsx";
+import ExportModal from "../components/ExportModal.jsx";
+
+import { DEFAULT_DIALECT } from "../types/databaseTypes.js";
+import {
+    createRelationEdge,
+    createStarterSchema,
+    createTableNode
+} from "../utils/schemaFactory.js";
+import { generateDBML, generateSQL } from "../utils/sqlGenerator.js";
+import { parseDBMLToSchema } from "../utils/dbmlParser.js";
+import { downloadTextFile } from "../utils/download.js";
+import { loadFromStorage, saveToStorage } from "../utils/storage.js";
+import { applyTheme, getSavedTheme, saveTheme } from "../utils/theme.js";
+
+const nodeTypes = {
+    tableNode: TableNode
+};
+
+export default function EditorPage() {
+    return (
+        <ReactFlowProvider>
+            <EditorPageContent />
+        </ReactFlowProvider>
+    );
+}
+
+function EditorPageContent() {
+    const saved = loadFromStorage();
+    const starter = saved?.nodes?.length ? saved : createStarterSchema();
+
+    const sqlEditorRef = useRef(null);
+
+    /*
+      canvas — последнее изменение пришло из canvas / панели свойств
+      code   — последнее изменение пришло из текстового редактора
+    */
+    const changeSourceRef = useRef("canvas");
+
+    const [projectName, setProjectName] = useState(
+        saved?.projectName || "Diploma Database Schema"
+    );
+
+    const [dialect, setDialect] = useState(saved?.dialect || DEFAULT_DIALECT);
+    const [theme, setTheme] = useState(getSavedTheme);
+
+    const [nodes, setNodes, onNodesChangeBase] = useNodesState(starter.nodes);
+    const [edges, setEdges, onEdgesChangeBase] = useEdgesState(starter.edges);
+
+    const [selectedNodeId, setSelectedNodeId] = useState(null);
+
+    const [schemaCode, setSchemaCode] = useState(() =>
+        generateDBML(starter.nodes, starter.edges)
+    );
+
+    const [schemaErrors, setSchemaErrors] = useState([]);
+    const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+
+    const selectedTable =
+        nodes.find((node) => node.id === selectedNodeId) || null;
+
+    const sql = useMemo(() => {
+        return generateSQL(nodes, edges, dialect);
+    }, [nodes, edges, dialect]);
+
+    const flowNodes = useMemo(() => {
+        return nodes.map((node) => ({
+            ...node,
+            data: {
+                ...node.data,
+                onDoubleClick: selectTableCode
+            }
+        }));
+    }, [nodes, schemaCode]);
+
+    const visibleEdges = useMemo(() => {
+        return edges.map((edge) => {
+            const isRelatedToSelectedTable =
+                selectedNodeId &&
+                (edge.source === selectedNodeId || edge.target === selectedNodeId);
+
+            if (!selectedNodeId) {
+                return {
+                    ...edge,
+                    animated: false,
+                    className: "",
+                    style: {
+                        ...(edge.style || {}),
+                        stroke: "#2563eb",
+                        strokeWidth: 2,
+                        opacity: 1
+                    },
+                    labelStyle: {
+                        ...(edge.labelStyle || {}),
+                        fill: "#334155",
+                        fontWeight: 700
+                    },
+                    labelBgStyle: {
+                        ...(edge.labelBgStyle || {}),
+                        fill: "#ffffff",
+                        fillOpacity: 0.9
+                    }
+                };
+            }
+
+            if (isRelatedToSelectedTable) {
+                return {
+                    ...edge,
+                    animated: true,
+                    className: "edge-electric",
+                    style: {
+                        ...(edge.style || {}),
+                        stroke: "#0ea5e9",
+                        strokeWidth: 3,
+                        opacity: 1
+                    },
+                    labelStyle: {
+                        ...(edge.labelStyle || {}),
+                        fill: "#0369a1",
+                        fontWeight: 800
+                    },
+                    labelBgStyle: {
+                        ...(edge.labelBgStyle || {}),
+                        fill: "#e0f2fe",
+                        fillOpacity: 0.95
+                    }
+                };
+            }
+
+            return {
+                ...edge,
+                animated: false,
+                className: "edge-muted",
+                style: {
+                    ...(edge.style || {}),
+                    stroke: "#94a3b8",
+                    strokeWidth: 1.5,
+                    opacity: 0.35
+                },
+                labelStyle: {
+                    ...(edge.labelStyle || {}),
+                    fill: "#94a3b8",
+                    fontWeight: 600
+                },
+                labelBgStyle: {
+                    ...(edge.labelBgStyle || {}),
+                    fill: "#ffffff",
+                    fillOpacity: 0.55
+                }
+            };
+        });
+    }, [edges, selectedNodeId]);
+
+    useEffect(() => {
+        applyTheme(theme);
+        saveTheme(theme);
+    }, [theme]);
+
+    useEffect(() => {
+        saveToStorage({
+            projectName,
+            dialect,
+            nodes,
+            edges
+        });
+    }, [projectName, dialect, nodes, edges]);
+
+    /*
+      Если изменения пришли из canvas — обновляем код слева.
+      Если изменения пришли из кода — НЕ трогаем schemaCode.
+      Это и решает проблему отката текста.
+    */
+    useEffect(() => {
+        if (changeSourceRef.current !== "canvas") {
+            return;
+        }
+
+        setSchemaCode(generateDBML(nodes, edges));
+        setSchemaErrors([]);
+    }, [nodes, edges]);
+
+    /*
+      Live-парсинг кода.
+      Код слева не перезаписываем.
+      Только обновляем nodes/edges, если текст валиден.
+    */
+    useEffect(() => {
+        if (changeSourceRef.current !== "code") {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            const parsed = parseDBMLToSchema(schemaCode, nodes);
+
+            if (parsed.errors.length > 0) {
+                setSchemaErrors(parsed.errors);
+                return;
+            }
+
+            setSchemaErrors([]);
+
+            changeSourceRef.current = "code";
+            setNodes(parsed.nodes);
+            setEdges(parsed.edges);
+
+            setSelectedNodeId((currentSelectedNodeId) => {
+                const stillExists = parsed.nodes.some((node) => {
+                    return node.id === currentSelectedNodeId;
+                });
+
+                return stillExists ? currentSelectedNodeId : null;
+            });
+        }, 450);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [schemaCode]);
+
+    const onConnect = useCallback(
+        (connection) => {
+            const edge = createRelationEdge(
+                connection.source,
+                connection.target,
+                connection.sourceHandle,
+                connection.targetHandle,
+                "one-to-many"
+            );
+
+            changeSourceRef.current = "canvas";
+            setEdges((currentEdges) => addEdge(edge, currentEdges));
+        },
+        [setEdges]
+    );
+
+    const onNodesChange = useCallback(
+        (changes) => {
+            changeSourceRef.current = "canvas";
+            onNodesChangeBase(changes);
+        },
+        [onNodesChangeBase]
+    );
+
+    const onEdgesChange = useCallback(
+        (changes) => {
+            changeSourceRef.current = "canvas";
+            onEdgesChangeBase(changes);
+        },
+        [onEdgesChangeBase]
+    );
+
+    function handleSchemaCodeChange(nextCode) {
+        changeSourceRef.current = "code";
+        setSchemaCode(nextCode);
+    }
+
+    function toggleTheme() {
+        setTheme((currentTheme) => {
+            return currentTheme === "dark" ? "light" : "dark";
+        });
+    }
+
+    function addTable() {
+        const node = createTableNode(nodes.length + 1, {
+            x: 250 + nodes.length * 40,
+            y: 100 + nodes.length * 40
+        });
+
+        changeSourceRef.current = "canvas";
+        setNodes((currentNodes) => [...currentNodes, node]);
+        setSelectedNodeId(node.id);
+    }
+
+    function deleteSelected() {
+        if (!selectedNodeId) {
+            return;
+        }
+
+        changeSourceRef.current = "canvas";
+
+        setNodes((currentNodes) =>
+            currentNodes.filter((node) => node.id !== selectedNodeId)
+        );
+
+        setEdges((currentEdges) =>
+            currentEdges.filter(
+                (edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId
+            )
+        );
+
+        setSelectedNodeId(null);
+    }
+
+    function updateTable(updatedTable) {
+        changeSourceRef.current = "canvas";
+
+        setNodes((currentNodes) =>
+            currentNodes.map((node) => {
+                if (node.id !== updatedTable.id) {
+                    return node;
+                }
+
+                return updatedTable;
+            })
+        );
+    }
+
+    function deleteField(tableId, fieldId) {
+        changeSourceRef.current = "canvas";
+
+        setNodes((currentNodes) =>
+            currentNodes.map((node) => {
+                if (node.id !== tableId) {
+                    return node;
+                }
+
+                return {
+                    ...node,
+                    data: {
+                        ...node.data,
+                        fields: node.data.fields.filter((field) => field.id !== fieldId)
+                    }
+                };
+            })
+        );
+
+        setEdges((currentEdges) =>
+            currentEdges.filter((edge) => {
+                return (
+                    edge.sourceHandle !== `source-${fieldId}` &&
+                    edge.targetHandle !== `target-${fieldId}`
+                );
+            })
+        );
+    }
+
+    function exportJson() {
+        const content = JSON.stringify(
+            {
+                projectName,
+                dialect,
+                nodes,
+                edges
+            },
+            null,
+            2
+        );
+
+        downloadTextFile(`${projectName || "schema"}.json`, content, "application/json");
+    }
+
+    function downloadSql() {
+        downloadTextFile(`${projectName || "schema"}-${dialect}.sql`, sql, "text/sql");
+    }
+
+    function resetSchema() {
+        const schema = createStarterSchema();
+
+        localStorage.clear();
+
+        changeSourceRef.current = "canvas";
+
+        setProjectName("Diploma Database Schema");
+        setDialect(DEFAULT_DIALECT);
+        setNodes(schema.nodes);
+        setEdges(schema.edges);
+        setSelectedNodeId(null);
+        setSchemaErrors([]);
+        setSchemaCode(generateDBML(schema.nodes, schema.edges));
+    }
+
+    function escapeRegExp(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function selectTableCode(tableName) {
+        const textarea = sqlEditorRef.current;
+
+        if (!textarea) {
+            console.log("Textarea ref не найден");
+            return;
+        }
+
+        const escapedTableName = escapeRegExp(tableName);
+
+        const tableRegex = new RegExp(
+            `Table\\s+${escapedTableName}\\s*\\{[\\s\\S]*?\\}`,
+            "m"
+        );
+
+        const match = tableRegex.exec(schemaCode);
+
+        if (!match) {
+            console.log(`Блок Table ${tableName} не найден в коде`);
+            return;
+        }
+
+        const start = match.index;
+        const end = start + match[0].length;
+
+        const node = nodes.find((item) => item.data.name === tableName);
+        setSelectedNodeId(node?.id || null);
+
+        requestAnimationFrame(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start, end);
+
+            const textBeforeSelection = schemaCode.slice(0, start);
+            const lineNumber = textBeforeSelection.split("\n").length - 1;
+            const lineHeight = 24;
+
+            textarea.scrollTop = Math.max(0, lineNumber * lineHeight - 80);
+        });
+    }
+
+    return (
+        <div className="flex h-screen w-screen flex-col overflow-hidden bg-app-bg dark:bg-slate-950">
+            <TopBar
+                projectName={projectName}
+                onProjectNameChange={setProjectName}
+                onExportJson={exportJson}
+                onExportSql={() => setIsSqlModalOpen(true)}
+                onReset={resetSchema}
+                theme={theme}
+                onToggleTheme={toggleTheme}
+            />
+
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+                <Sidebar
+                    onAddTable={addTable}
+                    onDeleteSelected={deleteSelected}
+                    selectedTable={selectedTable}
+                />
+
+                <SqlEditor
+                    ref={sqlEditorRef}
+                    value={schemaCode}
+                    onChange={handleSchemaCodeChange}
+                    errors={schemaErrors}
+                />
+
+                <main className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    <div className="absolute inset-0">
+                        <ReactFlow
+                            nodes={flowNodes}
+                            edges={visibleEdges}
+                            nodeTypes={nodeTypes}
+                            onNodesChange={onNodesChange}
+                            onEdgesChange={onEdgesChange}
+                            onConnect={onConnect}
+                            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+                            onPaneClick={() => setSelectedNodeId(null)}
+                            nodesDraggable={true}
+                            nodesConnectable={true}
+                            nodesFocusable={true}
+                            edgesFocusable={true}
+                            elementsSelectable={true}
+                            selectNodesOnDrag={false}
+                            panOnDrag={true}
+                            zoomOnScroll={true}
+                            zoomOnPinch={true}
+                            zoomOnDoubleClick={false}
+                            nodeDragThreshold={1}
+                            deleteKeyCode={["Backspace", "Delete"]}
+                            fitView
+                            fitViewOptions={{
+                                padding: 0.2
+                            }}
+                            defaultEdgeOptions={{
+                                type: "smoothstep",
+                                style: {
+                                    strokeWidth: 2,
+                                    stroke: "#2563eb"
+                                }
+                            }}
+                            connectionLineStyle={{
+                                strokeWidth: 2,
+                                stroke: "#2563eb"
+                            }}
+                        >
+                            <Background gap={18} size={1} />
+                            <Controls />
+                            <MiniMap pannable zoomable />
+                        </ReactFlow>
+                    </div>
+                </main>
+
+                <PropertiesPanel
+                    selectedTable={selectedTable}
+                    dialect={dialect}
+                    onDialectChange={setDialect}
+                    onUpdateTable={updateTable}
+                    onDeleteField={deleteField}
+                />
+            </div>
+
+            <ExportModal
+                open={isSqlModalOpen}
+                dialect={dialect}
+                onDialectChange={setDialect}
+                sql={sql}
+                onClose={() => setIsSqlModalOpen(false)}
+                onDownload={downloadSql}
+            />
+        </div>
+    );
+}
