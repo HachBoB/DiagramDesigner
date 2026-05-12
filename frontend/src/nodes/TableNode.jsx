@@ -1,5 +1,5 @@
 import { Handle, Position } from "reactflow";
-import { KeyRound, Link2, ShieldCheck } from "lucide-react";
+import { KeyRound, Link2, Settings, ShieldCheck, Table2 } from "lucide-react";
 
 export default function TableNode({ data, selected }) {
     function handleDoubleClick(event) {
@@ -9,6 +9,24 @@ export default function TableNode({ data, selected }) {
             data.onDoubleClick(data.name);
         }
     }
+
+    function openRecords(event) {
+        event.stopPropagation();
+
+        if (typeof data.onOpenRecords === "function") {
+            data.onOpenRecords(data.tableId);
+        }
+    }
+
+    function openSettings(event) {
+        event.stopPropagation();
+
+        if (typeof data.onConfigure === "function") {
+            data.onConfigure(data.tableId);
+        }
+    }
+
+    const recordsCount = Array.isArray(data.records?.rows) ? data.records.rows.length : 0;
 
     return (
         <div
@@ -27,8 +45,24 @@ export default function TableNode({ data, selected }) {
                     {data.name}
                 </div>
 
-                <div className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                    table
+                <div className="flex items-center gap-1">
+                    <button
+                        type="button"
+                        onClick={openRecords}
+                        title={recordsCount > 0 ? `Открыть записи: ${recordsCount}` : "Открыть записи"}
+                        className="nodrag flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-300"
+                    >
+                        <Table2 size={16} />
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={openSettings}
+                        title="Настройки таблицы"
+                        className="nodrag flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                    >
+                        <Settings size={16} />
+                    </button>
                 </div>
             </div>
 

@@ -15,6 +15,14 @@ class DefaultSchemaService
                     ['id' => 'users-name', 'name' => 'name', 'type' => 'VARCHAR', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
                     ['id' => 'users-created-at', 'name' => 'created_at', 'type' => 'TIMESTAMP', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
                 ],
+                'records' => [
+                    'columns' => ['id', 'email', 'name'],
+                    'rows' => [
+                        [1, 'alice@example.com', 'Alice'],
+                        [2, 'bob@example.com', 'Bob'],
+                        [3, 'candice@example.com', 'Candice'],
+                    ],
+                ],
             ],
             'orders' => [
                 'position' => ['x' => 780, 'y' => 120],
@@ -23,6 +31,13 @@ class DefaultSchemaService
                     ['id' => 'orders-user-id', 'name' => 'user_id', 'type' => 'INTEGER', 'pk' => false, 'fk' => true, 'unique' => false, 'nullable' => false],
                     ['id' => 'orders-status', 'name' => 'status', 'type' => 'VARCHAR', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
                     ['id' => 'orders-created-at', 'name' => 'created_at', 'type' => 'TIMESTAMP', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
+                ],
+                'records' => [
+                    'columns' => ['id', 'user_id', 'status'],
+                    'rows' => [
+                        [101, 1, 'paid'],
+                        [102, 2, 'pending'],
+                    ],
                 ],
             ],
             'products' => [
@@ -33,6 +48,13 @@ class DefaultSchemaService
                     ['id' => 'products-price', 'name' => 'price', 'type' => 'DECIMAL', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
                     ['id' => 'products-stock', 'name' => 'stock', 'type' => 'INTEGER', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
                 ],
+                'records' => [
+                    'columns' => ['id', 'title', 'price', 'stock'],
+                    'rows' => [
+                        [201, 'Keyboard', 89.99, 14],
+                        [202, 'Mouse', 39.99, 28],
+                    ],
+                ],
             ],
             'order_items' => [
                 'position' => ['x' => 780, 'y' => 420],
@@ -41,6 +63,13 @@ class DefaultSchemaService
                     ['id' => 'order-items-order-id', 'name' => 'order_id', 'type' => 'INTEGER', 'pk' => false, 'fk' => true, 'unique' => false, 'nullable' => false],
                     ['id' => 'order-items-product-id', 'name' => 'product_id', 'type' => 'INTEGER', 'pk' => false, 'fk' => true, 'unique' => false, 'nullable' => false],
                     ['id' => 'order-items-quantity', 'name' => 'quantity', 'type' => 'INTEGER', 'pk' => false, 'fk' => false, 'unique' => false, 'nullable' => false],
+                ],
+                'records' => [
+                    'columns' => ['id', 'order_id', 'product_id', 'quantity'],
+                    'rows' => [
+                        [301, 101, 201, 1],
+                        [302, 102, 202, 2],
+                    ],
                 ],
             ],
         ];
@@ -54,6 +83,10 @@ class DefaultSchemaService
                     'tableId' => $name,
                     'name' => $name,
                     'fields' => $table['fields'],
+                    'records' => $table['records'] ?? [
+                        'columns' => [],
+                        'rows' => [],
+                    ],
                 ],
             ], array_keys($tables), $tables),
             'edges' => [
@@ -76,7 +109,7 @@ Table users {
 
 Table orders {
   id SERIAL [pk, unique]
-  user_id INTEGER [ref: > users.id, not null]
+  user_id INTEGER [fk, not null]
   status VARCHAR [not null]
   created_at TIMESTAMP [not null]
 }
@@ -90,14 +123,35 @@ Table products {
 
 Table order_items {
   id SERIAL [pk, unique]
-  order_id INTEGER [ref: > orders.id, not null]
-  product_id INTEGER [ref: > products.id, not null]
+  order_id INTEGER [fk, not null]
+  product_id INTEGER [fk, not null]
   quantity INTEGER [not null]
 }
 
 Ref one-to-many: users.id > orders.user_id
 Ref one-to-many: orders.id > order_items.order_id
 Ref one-to-many: products.id > order_items.product_id
+
+Records users(id, email, name) {
+  1, 'alice@example.com', 'Alice'
+  2, 'bob@example.com', 'Bob'
+  3, 'candice@example.com', 'Candice'
+}
+
+Records orders(id, user_id, status) {
+  101, 1, 'paid'
+  102, 2, 'pending'
+}
+
+Records products(id, title, price, stock) {
+  201, 'Keyboard', 89.99, 14
+  202, 'Mouse', 39.99, 28
+}
+
+Records order_items(id, order_id, product_id, quantity) {
+  301, 101, 201, 1
+  302, 102, 202, 2
+}
 DBML;
     }
 

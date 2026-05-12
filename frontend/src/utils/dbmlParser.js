@@ -234,11 +234,174 @@ function parseRefLine(line, lineNumber) {
     };
 }
 
+function splitRecordValues(line) {
+    const values = [];
+    let current = "";
+    let quote = null;
+    let isEscaped = false;
+
+    for (const char of line) {
+        if (isEscaped) {
+            current += char;
+            isEscaped = false;
+            continue;
+        }
+
+        if (char === "\\") {
+            current += char;
+            isEscaped = true;
+            continue;
+        }
+
+        if ((char === "'" || char === "\"") && !quote) {
+            quote = char;
+            current += char;
+            continue;
+        }
+
+        if (char === quote) {
+            quote = null;
+            current += char;
+            continue;
+        }
+
+        if (char === "," && !quote) {
+            values.push(current.trim());
+            current = "";
+            continue;
+        }
+
+        current += char;
+    }
+
+    values.push(current.trim());
+
+    return {
+        values,
+        hasOpenQuote: Boolean(quote)
+    };
+}
+
+function parseRecordValue(value) {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+        return "";
+    }
+
+    if (/^null$/i.test(trimmed)) {
+        return null;
+    }
+
+    if (/^true$/i.test(trimmed)) {
+        return true;
+    }
+
+    if (/^false$/i.test(trimmed)) {
+        return false;
+    }
+
+    if (
+        (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+        (trimmed.startsWith("\"") && trimmed.endsWith("\""))
+    ) {
+        return trimmed
+            .slice(1, -1)
+            .replace(/\\'/g, "'")
+            .replace(/\\"/g, "\"")
+            .replace(/\\\\/g, "\\");
+    }
+
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+        return Number(trimmed);
+    }
+
+    return trimmed;
+}
+
+function parseRecordsHeader(line, lineNumber) {
+    const recordsMatch = line.match(
+        /^Records\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*\{\s*$/
+    );
+
+    if (!recordsMatch) {
+        return {
+            records: null,
+            errors: [
+                createParserError(
+                    lineNumber,
+                    1,
+                    `Invalid records declaration "${line}"`,
+                    "Формат записей: Records users(id, username, role) {"
+                )
+            ]
+        };
+    }
+
+    const [, tableName, rawColumns] = recordsMatch;
+    const columns = rawColumns
+        .split(",")
+        .map((column) => column.trim())
+        .filter(Boolean);
+
+    const errors = [];
+    const usedColumns = new Set();
+
+    columns.forEach((column) => {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column)) {
+            errors.push(
+                createParserError(
+                    lineNumber,
+                    1,
+                    `Invalid records column "${column}"`,
+                    "Названия колонок должны совпадать с полями таблицы."
+                )
+            );
+            return;
+        }
+
+        if (usedColumns.has(column)) {
+            errors.push(
+                createParserError(
+                    lineNumber,
+                    1,
+                    `Duplicate records column "${column}"`,
+                    "Колонки в блоке Records не должны повторяться."
+                )
+            );
+            return;
+        }
+
+        usedColumns.add(column);
+    });
+
+    if (columns.length === 0) {
+        errors.push(
+            createParserError(
+                lineNumber,
+                1,
+                `Records block for "${tableName}" has no columns`,
+                "Укажи хотя бы одну колонку в скобках."
+            )
+        );
+    }
+
+    return {
+        records: {
+            tableName,
+            columns,
+            rows: []
+        },
+        errors
+    };
+}
+
 export function parseDBMLToSchema(text, existingNodes = []) {
     const lines = String(text || "").split("\n");
     const errors = [];
     const tables = [];
     const refs = [];
+    const recordsBlocks = [];
 
     let index = 0;
 
@@ -395,6 +558,96 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             continue;
         }
 
+        if (line.startsWith("Records")) {
+            const parsedHeader = parseRecordsHeader(line, lineNumber);
+            errors.push(...parsedHeader.errors);
+
+            if (!parsedHeader.records) {
+                index += 1;
+                continue;
+            }
+
+            const records = parsedHeader.records;
+            const recordsStartLine = lineNumber;
+
+            index += 1;
+
+            let closed = false;
+
+            while (index < lines.length) {
+                const rowRawLine = lines[index];
+                const rowLine = rowRawLine.trim();
+                const rowLineNumber = index + 1;
+
+                if (!rowLine || rowLine.startsWith("//")) {
+                    index += 1;
+                    continue;
+                }
+
+                if (rowLine === "}") {
+                    closed = true;
+                    index += 1;
+                    break;
+                }
+
+                if (rowLine.startsWith("Table") || rowLine.startsWith("Ref") || rowLine.startsWith("Records")) {
+                    errors.push(
+                        createParserError(
+                            rowLineNumber,
+                            1,
+                            `Unexpected declaration inside Records "${records.tableName}"`,
+                            `Закрой блок Records "${records.tableName}" символом }, а затем объявляй следующую сущность.`
+                        )
+                    );
+
+                    break;
+                }
+
+                const parsedRow = splitRecordValues(rowLine);
+
+                if (parsedRow.hasOpenQuote) {
+                    errors.push(
+                        createParserError(
+                            rowLineNumber,
+                            rowLine.length,
+                            "Missing closing quote in record row",
+                            "Закрой строковое значение одинарной или двойной кавычкой."
+                        )
+                    );
+                }
+
+                if (parsedRow.values.length !== records.columns.length) {
+                    errors.push(
+                        createParserError(
+                            rowLineNumber,
+                            1,
+                            `Records row has ${parsedRow.values.length} values, expected ${records.columns.length}`,
+                            "Количество значений в строке должно совпадать с количеством колонок в Records."
+                        )
+                    );
+                } else {
+                    records.rows.push(parsedRow.values.map(parseRecordValue));
+                }
+
+                index += 1;
+            }
+
+            if (!closed) {
+                errors.push(
+                    createParserError(
+                        lines.length,
+                        Math.max(1, lines[lines.length - 1]?.length || 1),
+                        `Missing closing brace "}" for records "${records.tableName}"`,
+                        `Блок Records был открыт на строке ${recordsStartLine}. Добавь } после последней строки записей.`
+                    )
+                );
+            }
+
+            recordsBlocks.push(records);
+
+            continue;
+        }
+
         if (line === "}") {
             errors.push(
                 createParserError(
@@ -422,6 +675,8 @@ export function parseDBMLToSchema(text, existingNodes = []) {
     }
 
     const nodes = tables.map((table, tableIndex) => {
+        const records = recordsBlocks.find((item) => item.tableName === table.name);
+
         return {
             id: table.id,
             type: "tableNode",
@@ -429,9 +684,49 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             data: {
                 tableId: table.id,
                 name: table.name,
-                fields: table.fields
+                fields: table.fields,
+                records: records
+                    ? {
+                        columns: records.columns,
+                        rows: records.rows
+                    }
+                    : {
+                        columns: [],
+                        rows: []
+                    }
             }
         };
+    });
+
+    recordsBlocks.forEach((records) => {
+        const table = tables.find((item) => item.name === records.tableName);
+
+        if (!table) {
+            errors.push(
+                createParserError(
+                    1,
+                    1,
+                    `Records declared for unknown table "${records.tableName}"`,
+                    "Сначала объяви таблицу, а затем добавь для нее блок Records."
+                )
+            );
+            return;
+        }
+
+        records.columns.forEach((column) => {
+            const fieldExists = table.fields.some((field) => field.name === column);
+
+            if (!fieldExists) {
+                errors.push(
+                    createParserError(
+                        1,
+                        1,
+                        `Unknown field "${records.tableName}.${column}" in Records`,
+                        "Колонки Records должны совпадать с полями таблицы."
+                    )
+                );
+            }
+        });
     });
 
     const edges = [];

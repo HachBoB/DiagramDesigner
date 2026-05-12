@@ -16,6 +16,7 @@ import Sidebar from "../components/Sidebar.jsx";
 import SqlEditor from "../components/SqlEditor.jsx";
 import PropertiesPanel from "../components/PropertiesPanel.jsx";
 import ExportModal from "../components/ExportModal.jsx";
+import RecordsModal from "../components/RecordsModal.jsx";
 
 import { DEFAULT_DIALECT } from "../types/databaseTypes.js";
 import {
@@ -67,6 +68,7 @@ function EditorPageContent({ theme, onToggleTheme }) {
 
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+    const [recordsTableId, setRecordsTableId] = useState(null);
 
     const [schemaCode, setSchemaCode] = useState(() =>
         saved?.schemaCode || generateDBML(starter.nodes, starter.edges)
@@ -84,6 +86,9 @@ function EditorPageContent({ theme, onToggleTheme }) {
     const selectedRelation =
         edges.find((edge) => edge.id === selectedEdgeId) || null;
 
+    const recordsTable =
+        nodes.find((node) => node.id === recordsTableId) || null;
+
     const sql = useMemo(() => {
         return generateSQL(nodes, edges, dialect);
     }, [nodes, edges, dialect]);
@@ -93,7 +98,9 @@ function EditorPageContent({ theme, onToggleTheme }) {
             ...node,
             data: {
                 ...node.data,
-                onDoubleClick: selectTableCode
+                onDoubleClick: selectTableCode,
+                onOpenRecords: openRecords,
+                onConfigure: selectTable
             }
         }));
         // selectTableCode reads the current editor state when invoked from a node event.
@@ -587,6 +594,17 @@ function EditorPageContent({ theme, onToggleTheme }) {
         });
     }
 
+    function openRecords(tableId) {
+        setRecordsTableId(tableId);
+        setSelectedNodeId(tableId);
+        setSelectedEdgeId(null);
+    }
+
+    function selectTable(tableId) {
+        setSelectedNodeId(tableId);
+        setSelectedEdgeId(null);
+    }
+
     function handleNodeClick(_, node) {
         setSelectedNodeId(node.id);
         setSelectedEdgeId(null);
@@ -698,6 +716,11 @@ function EditorPageContent({ theme, onToggleTheme }) {
                 sql={sql}
                 onClose={() => setIsSqlModalOpen(false)}
                 onDownload={downloadSql}
+            />
+
+            <RecordsModal
+                table={recordsTable}
+                onClose={() => setRecordsTableId(null)}
             />
         </div>
     );

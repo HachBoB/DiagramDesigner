@@ -58,12 +58,17 @@ export default function DocsPage({ theme, onToggleTheme }) {
                         canvas пересобирается по DBML-like коду.
                     </DocBlock>
 
-                    <DocBlock title="5. Экспорт">
+                    <DocBlock title="5. Записи таблиц">
+                        Для таблицы можно добавить блок Records users(id, email, name) {"{"} ... {"}"}.
+                        После этого в карточке таблицы появится содержимое, которое открывается кнопкой с иконкой таблицы.
+                    </DocBlock>
+
+                    <DocBlock title="6. Экспорт">
                         Можно скачать JSON всей схемы или SQL CREATE TABLE под разные СУБД:
                         PostgreSQL, MySQL, SQLite, SQL Server, Oracle.
                     </DocBlock>
 
-                    <DocBlock title="6. Хранение">
+                    <DocBlock title="7. Хранение">
                         После входа проекты сохраняются в вашем аккаунте и доступны на странице
                         «Мои проекты». Режим без аккаунта используется только для быстрых черновиков.
                     </DocBlock>

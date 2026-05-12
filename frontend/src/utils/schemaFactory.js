@@ -29,7 +29,11 @@ export function createTableNode(index = 1, position = { x: 200, y: 120 }) {
                     unique: true,
                     nullable: false
                 }
-            ]
+            ],
+            records: {
+                columns: [],
+                rows: []
+            }
         }
     };
 }
@@ -116,7 +120,15 @@ export function createStarterSchema() {
             data: {
                 tableId: usersId,
                 name: "users",
-                fields: usersFields
+                fields: usersFields,
+                records: {
+                    columns: ["id", "email", "name"],
+                    rows: [
+                        [1, "alice@example.com", "Alice"],
+                        [2, "bob@example.com", "Bob"],
+                        [3, "candice@example.com", "Candice"]
+                    ]
+                }
             }
         },
         {
@@ -126,7 +138,14 @@ export function createStarterSchema() {
             data: {
                 tableId: ordersId,
                 name: "orders",
-                fields: ordersFields
+                fields: ordersFields,
+                records: {
+                    columns: ["id", "user_id", "status"],
+                    rows: [
+                        [101, 1, "paid"],
+                        [102, 2, "pending"]
+                    ]
+                }
             }
         },
         {
@@ -136,7 +155,14 @@ export function createStarterSchema() {
             data: {
                 tableId: productsId,
                 name: "products",
-                fields: productsFields
+                fields: productsFields,
+                records: {
+                    columns: ["id", "title", "price", "stock"],
+                    rows: [
+                        [201, "Keyboard", 89.99, 14],
+                        [202, "Mouse", 39.99, 28]
+                    ]
+                }
             }
         },
         {
@@ -146,7 +172,14 @@ export function createStarterSchema() {
             data: {
                 tableId: orderItemsId,
                 name: "order_items",
-                fields: orderItemsFields
+                fields: orderItemsFields,
+                records: {
+                    columns: ["id", "order_id", "product_id", "quantity"],
+                    rows: [
+                        [301, 101, 201, 1],
+                        [302, 102, 202, 2]
+                    ]
+                }
             }
         }
     ];

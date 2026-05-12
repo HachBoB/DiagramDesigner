@@ -112,6 +112,18 @@ function getFieldByHandle(node, handleId) {
     return node.data.fields.find((field) => field.id === fieldId);
 }
 
+function formatRecordValue(value) {
+    if (value === null || value === undefined) {
+        return "null";
+    }
+
+    if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+
+    return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
 export function generateSQL(nodes, edges, dialect = "postgresql") {
     const statements = nodes.map((node) => {
         const table = node.data;
@@ -197,5 +209,25 @@ export function generateDBML(nodes, edges) {
         return `Ref ${type}: ${sourceNode.data.name}.${sourceField.name} > ${targetNode.data.name}.${targetField.name}`;
     }).filter(Boolean);
 
-    return [...tableBlocks, ...relationLines].join("\n\n");
+    const recordBlocks = nodes
+        .map((node) => {
+            const records = node.data.records;
+            const columns = Array.isArray(records?.columns) ? records.columns : [];
+            const rows = Array.isArray(records?.rows) ? records.rows : [];
+
+            if (columns.length === 0 || rows.length === 0) {
+                return "";
+            }
+
+            const rowLines = rows.map((row) => {
+                const values = Array.isArray(row) ? row : [];
+
+                return `  ${values.map(formatRecordValue).join(", ")}`;
+            });
+
+            return `Records ${node.data.name}(${columns.join(", ")}) {\n${rowLines.join("\n")}\n}`;
+        })
+        .filter(Boolean);
+
+    return [...tableBlocks, ...relationLines, ...recordBlocks].join("\n\n");
 }
