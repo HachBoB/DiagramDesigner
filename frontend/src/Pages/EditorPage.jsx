@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import ReactFlow, {
     Background,
     Controls,
@@ -26,34 +27,41 @@ import { generateDBML, generateSQL } from "../utils/sqlGenerator.js";
 import { parseDBMLToSchema } from "../utils/dbmlParser.js";
 import { downloadTextFile } from "../utils/download.js";
 import { loadFromStorage, saveToStorage } from "../utils/storage.js";
-import { applyTheme, getSavedTheme, saveTheme } from "../utils/theme.js";
+import {
+    getApiErrorMessage,
+    getProject,
+    isAuthenticated,
+    markProjectOpened,
+    updateProject
+} from "../lib/api.js";
 
 const nodeTypes = {
     tableNode: TableNode
 };
 
-export default function EditorPage() {
+export default function EditorPage({ theme, onToggleTheme }) {
     return (
         <ReactFlowProvider>
-            <EditorPageContent />
+            <EditorPageContent theme={theme} onToggleTheme={onToggleTheme} />
         </ReactFlowProvider>
     );
 }
 
-function EditorPageContent() {
+function EditorPageContent({ theme, onToggleTheme }) {
+    const { projectId } = useParams();
+    const navigate = useNavigate();
     const saved = loadFromStorage();
     const starter = saved?.nodes?.length ? saved : createStarterSchema();
 
     const sqlEditorRef = useRef(null);
     const changeSourceRef = useRef("canvas");
+    const hasLoadedRemoteProjectRef = useRef(!projectId);
 
     const [projectName, setProjectName] = useState(
-        saved?.projectName || "Diploma Database Schema"
+        saved?.projectName || "Схема базы данных"
     );
 
     const [dialect, setDialect] = useState(saved?.dialect || DEFAULT_DIALECT);
-    const [theme, setTheme] = useState(getSavedTheme);
-
     const [nodes, setNodes, onNodesChangeBase] = useNodesState(starter.nodes);
     const [edges, setEdges, onEdgesChangeBase] = useEdgesState(starter.edges);
 
@@ -61,11 +69,14 @@ function EditorPageContent() {
     const [selectedEdgeId, setSelectedEdgeId] = useState(null);
 
     const [schemaCode, setSchemaCode] = useState(() =>
-        generateDBML(starter.nodes, starter.edges)
+        saved?.schemaCode || generateDBML(starter.nodes, starter.edges)
     );
 
     const [schemaErrors, setSchemaErrors] = useState([]);
     const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+    const [remoteStatus, setRemoteStatus] = useState(projectId ? "loading" : "local");
+    const [saveStatus, setSaveStatus] = useState(projectId ? "idle" : "local");
+    const [remoteError, setRemoteError] = useState("");
 
     const selectedTable =
         nodes.find((node) => node.id === selectedNodeId) || null;
@@ -85,6 +96,8 @@ function EditorPageContent() {
                 onDoubleClick: selectTableCode
             }
         }));
+        // selectTableCode reads the current editor state when invoked from a node event.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [nodes, schemaCode]);
 
     const visibleEdges = useMemo(() => {
@@ -192,21 +205,107 @@ function EditorPageContent() {
     }, [edges, selectedNodeId, selectedEdgeId]);
 
     useEffect(() => {
-        applyTheme(theme);
-        saveTheme(theme);
-    }, [theme]);
-
-    useEffect(() => {
         saveToStorage({
             projectName,
             dialect,
+            schemaCode,
             nodes,
             edges
         });
-    }, [projectName, dialect, nodes, edges]);
+    }, [projectName, dialect, schemaCode, nodes, edges]);
+
+    useEffect(() => {
+        if (!projectId) {
+            hasLoadedRemoteProjectRef.current = true;
+            return;
+        }
+
+        if (!isAuthenticated()) {
+            navigate("/login");
+            return;
+        }
+
+        let isMounted = true;
+        hasLoadedRemoteProjectRef.current = false;
+
+        getProject(projectId)
+            .then((project) => {
+                if (!isMounted) {
+                    return;
+                }
+
+                const schema = project.schema_json?.nodes?.length
+                    ? project.schema_json
+                    : createStarterSchema();
+
+                changeSourceRef.current = "remote";
+                setProjectName(project.name || "Новая схема базы данных");
+                setDialect(project.dialect || DEFAULT_DIALECT);
+                setNodes(schema.nodes);
+                setEdges(schema.edges);
+                setSchemaCode(project.schema_code || generateDBML(schema.nodes, schema.edges));
+                setSelectedNodeId(null);
+                setSelectedEdgeId(null);
+                setSchemaErrors([]);
+                setRemoteStatus("ready");
+                setSaveStatus("saved");
+                hasLoadedRemoteProjectRef.current = true;
+
+                markProjectOpened(projectId).catch(() => {});
+            })
+            .catch((requestError) => {
+                if (!isMounted) {
+                    return;
+                }
+
+                setRemoteStatus("error");
+                setSaveStatus("idle");
+                setRemoteError(getApiErrorMessage(requestError, "Не удалось загрузить проект."));
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [projectId, navigate, setEdges, setNodes]);
+
+    useEffect(() => {
+        if (!projectId || !hasLoadedRemoteProjectRef.current || schemaErrors.length > 0) {
+            return;
+        }
+
+        setSaveStatus("saving");
+
+        const timeoutId = window.setTimeout(() => {
+            updateProject(projectId, {
+                name: projectName || "Новая схема базы данных",
+                dialect,
+                schema_code: schemaCode,
+                schema_json: {
+                    nodes,
+                    edges
+                }
+            })
+                .then(() => {
+                    setSaveStatus("saved");
+                    setRemoteError("");
+                })
+                .catch((requestError) => {
+                    setSaveStatus("error");
+                    setRemoteError(getApiErrorMessage(requestError, "Не удалось сохранить проект."));
+                });
+        }, 900);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [projectId, projectName, dialect, schemaCode, nodes, edges, schemaErrors]);
 
     useEffect(() => {
         if (changeSourceRef.current !== "canvas") {
+            if (changeSourceRef.current === "remote") {
+                changeSourceRef.current = "canvas";
+            }
+
             return;
         }
 
@@ -253,6 +352,8 @@ function EditorPageContent() {
         return () => {
             window.clearTimeout(timeoutId);
         };
+        // This parser effect is intentionally driven only by DBML text edits.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [schemaCode]);
 
     const onConnect = useCallback(
@@ -292,12 +393,6 @@ function EditorPageContent() {
     function handleSchemaCodeChange(nextCode) {
         changeSourceRef.current = "code";
         setSchemaCode(nextCode);
-    }
-
-    function toggleTheme() {
-        setTheme((currentTheme) => {
-            return currentTheme === "dark" ? "light" : "dark";
-        });
     }
 
     function addTable() {
@@ -431,11 +526,13 @@ function EditorPageContent() {
     function resetSchema() {
         const schema = createStarterSchema();
 
-        localStorage.clear();
+        if (!projectId) {
+            localStorage.clear();
+        }
 
         changeSourceRef.current = "canvas";
 
-        setProjectName("Diploma Database Schema");
+        setProjectName("Схема базы данных");
         setDialect(DEFAULT_DIALECT);
         setNodes(schema.nodes);
         setEdges(schema.edges);
@@ -515,7 +612,10 @@ function EditorPageContent() {
                 onExportSql={() => setIsSqlModalOpen(true)}
                 onReset={resetSchema}
                 theme={theme}
-                onToggleTheme={toggleTheme}
+                onToggleTheme={onToggleTheme}
+                saveStatus={saveStatus}
+                remoteStatus={remoteStatus}
+                remoteError={remoteError}
             />
 
             <div className="flex min-h-0 flex-1 overflow-hidden">

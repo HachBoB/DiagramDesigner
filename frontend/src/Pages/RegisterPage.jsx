@@ -1,7 +1,41 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Database } from "lucide-react";
+import { getApiErrorMessage, register } from "../lib/api.js";
 
 export default function RegisterPage() {
+    const navigate = useNavigate();
+    const [form, setForm] = useState({
+        name: "",
+        email: "",
+        password: "",
+        password_confirmation: ""
+    });
+    const [error, setError] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        setError("");
+        setIsSubmitting(true);
+
+        try {
+            await register(form);
+            navigate("/projects");
+        } catch (requestError) {
+            setError(getApiErrorMessage(requestError, "Не удалось создать аккаунт."));
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
+    function updateField(field, value) {
+        setForm((currentForm) => ({
+            ...currentForm,
+            [field]: value
+        }));
+    }
+
     return (
         <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6 dark:bg-slate-950">
             <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-soft dark:bg-slate-900">
@@ -18,20 +52,60 @@ export default function RegisterPage() {
                 </h1>
 
                 <p className="mt-2 text-center text-sm text-slate-500 dark:text-slate-400">
-                    Заглушка страницы регистрации. Позже подключим backend.
+                    Создайте аккаунт, чтобы сохранять проекты схем и возвращаться к ним позже.
                 </p>
 
                 <div className="mt-8 space-y-4">
-                    <input className="auth-input" placeholder="Имя" />
-                    <input className="auth-input" placeholder="Email" type="email" />
-                    <input className="auth-input" placeholder="Пароль" type="password" />
+                    <form className="space-y-4" onSubmit={handleSubmit}>
+                        <input
+                            className="auth-input"
+                            placeholder="Имя"
+                            value={form.name}
+                            onChange={(event) => updateField("name", event.target.value)}
+                            required
+                        />
 
-                    <Link
-                        to="/projects"
-                        className="block rounded-2xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700"
-                    >
-                        Создать аккаунт
-                    </Link>
+                        <input
+                            className="auth-input"
+                            placeholder="Email"
+                            type="email"
+                            value={form.email}
+                            onChange={(event) => updateField("email", event.target.value)}
+                            required
+                        />
+
+                        <input
+                            className="auth-input"
+                            placeholder="Пароль"
+                            type="password"
+                            value={form.password}
+                            onChange={(event) => updateField("password", event.target.value)}
+                            required
+                        />
+
+                        <input
+                            className="auth-input"
+                            placeholder="Повторите пароль"
+                            type="password"
+                            value={form.password_confirmation}
+                            onChange={(event) => updateField("password_confirmation", event.target.value)}
+                            required
+                        />
+
+                        {error && (
+                            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                                {error}
+                            </div>
+                        )}
+
+                        <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="block w-full rounded-2xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            {isSubmitting ? "Создаём..." : "Создать аккаунт"}
+                        </button>
+                    </form>
 
                     <Link
                         to="/editor"

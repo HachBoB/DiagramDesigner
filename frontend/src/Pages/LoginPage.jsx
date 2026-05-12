@@ -1,21 +1,74 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Database } from "lucide-react";
+import { getApiErrorMessage, login } from "../lib/api.js";
 
 export default function LoginPage() {
+    const navigate = useNavigate();
+    const [form, setForm] = useState({ email: "", password: "" });
+    const [error, setError] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        setError("");
+        setIsSubmitting(true);
+
+        try {
+            await login(form);
+            navigate("/projects");
+        } catch (requestError) {
+            setError(getApiErrorMessage(requestError, "Не удалось войти."));
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
+    function updateField(field, value) {
+        setForm((currentForm) => ({
+            ...currentForm,
+            [field]: value
+        }));
+    }
+
     return (
         <AuthLayout
             title="Вход в аккаунт"
-            subtitle="Пока это frontend-заглушка. Backend добавим позже."
+            subtitle="Войдите, чтобы сохранять проекты схем в своем аккаунте."
         >
-            <input className="auth-input" placeholder="Email" type="email" />
-            <input className="auth-input" placeholder="Пароль" type="password" />
+            <form className="space-y-4" onSubmit={handleSubmit}>
+                <input
+                    className="auth-input"
+                    placeholder="Email"
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => updateField("email", event.target.value)}
+                    required
+                />
 
-            <Link
-                to="/projects"
-                className="block rounded-2xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700"
-            >
-                Войти
-            </Link>
+                <input
+                    className="auth-input"
+                    placeholder="Пароль"
+                    type="password"
+                    value={form.password}
+                    onChange={(event) => updateField("password", event.target.value)}
+                    required
+                />
+
+                {error && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                        {error}
+                    </div>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="block w-full rounded-2xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {isSubmitting ? "Входим..." : "Войти"}
+                </button>
+            </form>
 
             <Link
                 to="/editor"
@@ -54,9 +107,7 @@ function AuthLayout({ title, subtitle, children }) {
                     {subtitle}
                 </p>
 
-                <div className="mt-8 space-y-4">
-                    {children}
-                </div>
+                <div className="mt-8 space-y-4">{children}</div>
             </div>
         </div>
     );
