@@ -185,6 +185,49 @@ export async function markProjectOpened(projectId) {
     });
 }
 
+export async function getProjectShare(projectId, signal) {
+    return request(`/api/projects/${projectId}/share`, { signal });
+}
+
+export async function updateProjectShare(projectId, data) {
+    return request(`/api/projects/${projectId}/share`, {
+        method: "PATCH",
+        body: data
+    });
+}
+
+export async function getSharedProject(token, signal) {
+    return request(`/api/shared-projects/${token}`, {
+        auth: false,
+        signal
+    });
+}
+
+export async function unlockSharedProject(token, password) {
+    return request(`/api/shared-projects/${token}/unlock`, {
+        method: "POST",
+        auth: false,
+        body: { password }
+    });
+}
+
+export async function updateSharedProject(token, project, password = "") {
+    return request(`/api/shared-projects/${token}`, {
+        method: "PATCH",
+        auth: false,
+        body: password ? { ...project, password } : project
+    });
+}
+
+export async function askSchemaAssistant(payload) {
+    const response = await request("/api/ai/schema-assistant", {
+        method: "POST",
+        body: payload
+    });
+
+    return response.data;
+}
+
 export function getApiErrorMessage(error, fallback = "Unexpected error.") {
     if (error instanceof TypeError) {
         return "Не удалось подключиться к API. Проверьте, что Laravel запущен на http://127.0.0.1:8000 и работает Vite proxy.";

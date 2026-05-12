@@ -61,7 +61,7 @@ export default function ExportModal({
                         </button>
                     </div>
 
-                    <pre className="max-h-[560px] overflow-auto bg-slate-950 p-5 text-sm leading-6 text-slate-100">
+                    <pre className="max-h-[560px] overflow-auto bg-white p-5 text-sm leading-6 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
             <code>{sql}</code>
           </pre>
                 </div>

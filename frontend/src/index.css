@@ -28,7 +28,8 @@ body {
   margin: 0;
   background: #f6f7f9;
   color: #111827;
-  font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -40,9 +41,146 @@ body {
 
 button,
 input,
-select,
-textarea {
+select {
   font: inherit;
+}
+
+textarea {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+}
+
+pre,
+code,
+kbd,
+samp,
+.schema-scroll,
+.schema-line-numbers {
+  font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.schema-scroll {
+  color: transparent;
+  font-weight: 500;
+  letter-spacing: 0;
+  tab-size: 2;
+  -webkit-text-fill-color: transparent;
+}
+
+.schema-highlight {
+  color: #1e293b;
+  font-weight: 500;
+  letter-spacing: 0;
+  margin: 0;
+  tab-size: 2;
+}
+
+.schema-highlight::-webkit-scrollbar {
+  display: none;
+}
+
+.schema-highlight {
+  scrollbar-width: none;
+}
+
+.sql-token-keyword {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.sql-token-type {
+  color: #0284c7;
+}
+
+.sql-token-comment {
+  color: #16a34a;
+}
+
+.sql-token-string {
+  color: #c2410c;
+}
+
+.sql-token-number {
+  color: #15803d;
+}
+
+.sql-token-operator {
+  color: #64748b;
+}
+
+.sql-token-bracket {
+  font-weight: 800;
+}
+
+.sql-token-bracket-0 {
+  color: #2563eb;
+}
+
+.sql-token-bracket-1 {
+  color: #9333ea;
+}
+
+.sql-token-bracket-2 {
+  color: #dc2626;
+}
+
+.sql-token-bracket-3 {
+  color: #ca8a04;
+}
+
+.sql-token-bracket-4 {
+  color: #0891b2;
+}
+
+.dark .schema-highlight {
+  color: #f8fafc;
+}
+
+.dark .sql-token-keyword {
+  color: #38bdf8;
+}
+
+.dark .sql-token-type {
+  color: #38bdf8;
+}
+
+.dark .sql-token-comment {
+  color: #86efac;
+}
+
+.dark .sql-token-string {
+  color: #fb923c;
+}
+
+.dark .sql-token-number {
+  color: #bef264;
+}
+
+.dark .sql-token-operator {
+  color: #94a3b8;
+}
+
+.dark .sql-token-bracket-0 {
+  color: #60a5fa;
+}
+
+.dark .sql-token-bracket-1 {
+  color: #c084fc;
+}
+
+.dark .sql-token-bracket-2 {
+  color: #f87171;
+}
+
+.dark .sql-token-bracket-3 {
+  color: #facc15;
+}
+
+.dark .sql-token-bracket-4 {
+  color: #22d3ee;
 }
 
 .auth-input {

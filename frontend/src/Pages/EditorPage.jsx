@@ -17,6 +17,8 @@ import SqlEditor from "../components/SqlEditor.jsx";
 import PropertiesPanel from "../components/PropertiesPanel.jsx";
 import ExportModal from "../components/ExportModal.jsx";
 import RecordsModal from "../components/RecordsModal.jsx";
+import ShareSettingsModal from "../components/ShareSettingsModal.jsx";
+import AiAssistantPanel from "../components/AiAssistantPanel.jsx";
 
 import { DEFAULT_DIALECT } from "../types/databaseTypes.js";
 import {
@@ -76,6 +78,8 @@ function EditorPageContent({ theme, onToggleTheme }) {
 
     const [schemaErrors, setSchemaErrors] = useState([]);
     const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
     const [remoteStatus, setRemoteStatus] = useState(projectId ? "loading" : "local");
     const [saveStatus, setSaveStatus] = useState(projectId ? "idle" : "local");
     const [remoteError, setRemoteError] = useState("");
@@ -628,6 +632,8 @@ function EditorPageContent({ theme, onToggleTheme }) {
                 onProjectNameChange={setProjectName}
                 onExportJson={exportJson}
                 onExportSql={() => setIsSqlModalOpen(true)}
+                onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
+                onShare={projectId ? () => setIsShareModalOpen(true) : null}
                 onReset={resetSchema}
                 theme={theme}
                 onToggleTheme={onToggleTheme}
@@ -721,6 +727,23 @@ function EditorPageContent({ theme, onToggleTheme }) {
             <RecordsModal
                 table={recordsTable}
                 onClose={() => setRecordsTableId(null)}
+            />
+
+            <ShareSettingsModal
+                projectId={projectId}
+                open={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+            />
+
+            <AiAssistantPanel
+                open={isAiAssistantOpen}
+                onClose={() => setIsAiAssistantOpen(false)}
+                projectName={projectName}
+                dialect={dialect}
+                schemaCode={schemaCode}
+                schemaJson={{ nodes, edges }}
+                sql={sql}
+                onApplySchemaCode={handleSchemaCodeChange}
             />
         </div>
     );

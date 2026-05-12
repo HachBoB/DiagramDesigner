@@ -101,7 +101,7 @@ export default function RecordsModal({ table, onClose }) {
                             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
                                 Добавьте блок Records в код схемы, и строки появятся здесь.
                             </p>
-                            <pre className="mx-auto mt-4 max-w-xl overflow-auto rounded-2xl bg-slate-950 p-4 text-left text-sm leading-6 text-slate-100">
+                            <pre className="mx-auto mt-4 max-w-xl overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
 {`Records ${table.data.name}(${columns.join(", ")}) {
   1, 'пример'
 }`}

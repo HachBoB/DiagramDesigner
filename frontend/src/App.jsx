@@ -6,6 +6,7 @@ import EditorPage from "./pages/EditorPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import DocsPage from "./pages/DocsPage.jsx";
+import SharedProjectPage from "./pages/SharedProjectPage.jsx";
 import { applyTheme, getSavedTheme, saveTheme } from "./utils/theme.js";
 
 export default function App() {
@@ -43,6 +44,10 @@ export default function App() {
             <Route
                 path="/docs"
                 element={<DocsPage theme={theme} onToggleTheme={toggleTheme} />}
+            />
+            <Route
+                path="/share/:token"
+                element={<SharedProjectPage theme={theme} onToggleTheme={toggleTheme} />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

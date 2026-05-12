@@ -97,7 +97,7 @@ export default function LandingPage({ theme, onToggleTheme }) {
                 </section>
 
                 <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-white/10 dark:bg-white/5">
-                    <div className="rounded-2xl bg-slate-900 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                                 <span className="h-3 w-3 rounded-full bg-red-400" />
@@ -105,13 +105,13 @@ export default function LandingPage({ theme, onToggleTheme }) {
                                 <span className="h-3 w-3 rounded-full bg-green-400" />
                             </div>
 
-                            <div className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">
+                            <div className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
                                 Автосохранение включено
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1.2fr]">
-                            <pre className="overflow-hidden rounded-2xl bg-slate-950 p-4 text-sm leading-6 text-blue-100">
+                            <pre className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-blue-100">
 {`Table users {
   id SERIAL [pk]
   email VARCHAR [unique]
@@ -193,7 +193,7 @@ function Stat({ value, label }) {
 
 function MockTable({ title, fields }) {
     return (
-        <div className="rounded-2xl border border-white/10 bg-white p-4 text-slate-900 shadow-xl">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-xl dark:border-white/10">
             <div className="mb-3 font-bold">{title}</div>
 
             <div className="space-y-2">

@@ -22,6 +22,18 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'nvidia_nim' => [
+        'key' => env('NVIDIA_NIM_API_KEY'),
+        'base_url' => env('NVIDIA_NIM_BASE_URL', 'https://integrate.api.nvidia.com/v1'),
+        'model' => env('NVIDIA_NIM_MODEL', 'qwen/qwen3-coder-480b-a35b-instruct'),
+        'timeout' => (int) env('NVIDIA_NIM_TIMEOUT', 25),
+        'connect_timeout' => (int) env('NVIDIA_NIM_CONNECT_TIMEOUT', 8),
+        'max_tokens' => (int) env('NVIDIA_NIM_MAX_TOKENS', 550),
+        'edit_max_tokens' => (int) env('NVIDIA_NIM_EDIT_MAX_TOKENS', 2200),
+        'execution_time_limit' => (int) env('NVIDIA_NIM_EXECUTION_TIME_LIMIT', 60),
+        'verify_ssl' => env('NVIDIA_NIM_VERIFY_SSL', true),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { CheckCircle2, Cloud, CloudOff, Database, FileJson, FileText, Home, Loader2, RotateCcw } from "lucide-react";
+import { Bot, CheckCircle2, Cloud, CloudOff, Database, FileJson, FileText, Home, Loader2, RotateCcw, Share2 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle.jsx";
 
 export default function TopBar({
@@ -7,6 +7,8 @@ export default function TopBar({
                                    onProjectNameChange,
                                    onExportJson,
                                    onExportSql,
+                                   onOpenAiAssistant,
+                                   onShare,
                                    onReset,
                                    theme,
                                    onToggleTheme,
@@ -49,6 +51,26 @@ export default function TopBar({
                     theme={theme}
                     onToggle={onToggleTheme}
                 />
+
+                {onOpenAiAssistant && (
+                    <button
+                        onClick={onOpenAiAssistant}
+                        className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950"
+                    >
+                        <Bot size={16} />
+                        AI
+                    </button>
+                )}
+
+                {onShare && (
+                    <button
+                        onClick={onShare}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        <Share2 size={16} />
+                        Поделиться
+                    </button>
+                )}
 
                 <button
                     onClick={onReset}

@@ -281,10 +281,10 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
                             </div>
                         </div>
 
-                        <div className="rounded-3xl bg-slate-950 p-5 text-white">
+                        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
                             <div className="mb-4 flex items-center justify-between">
                                 <div>
-                                    <div className="text-sm text-slate-400">Проектов</div>
+                                    <div className="text-sm text-slate-500 dark:text-slate-400">Проектов</div>
                                     <div className="mt-1 text-4xl font-extrabold">
                                         {displayedProjects.length}
                                     </div>
@@ -347,8 +347,8 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
 
 function StatCard({ label, value }) {
     return (
-        <div className="rounded-2xl bg-white/10 p-4">
-            <div className="text-sm text-slate-400">{label}</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/10">
+            <div className="text-sm text-slate-500 dark:text-slate-400">{label}</div>
             <div className="mt-1 text-2xl font-extrabold">{value}</div>
         </div>
     );

@@ -71,10 +71,23 @@ class ProjectController extends Controller
     {
         $this->ensureOwnsProject($request, $project);
 
-        $copy = $project->replicate(['last_opened_at', 'is_favorite']);
+        $copy = $project->replicate([
+            'last_opened_at',
+            'is_favorite',
+            'share_token',
+            'share_access',
+            'share_permission',
+            'share_password_hash',
+            'shared_at',
+        ]);
         $copy->name = "{$project->name} Copy";
         $copy->is_favorite = false;
         $copy->last_opened_at = null;
+        $copy->share_access = 'private';
+        $copy->share_permission = 'view';
+        $copy->share_token = null;
+        $copy->share_password_hash = null;
+        $copy->shared_at = null;
         $copy->user_id = $request->user()->id;
         $copy->save();
 
