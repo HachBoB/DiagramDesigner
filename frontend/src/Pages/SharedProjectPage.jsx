@@ -14,6 +14,7 @@ import { CheckCircle2, CloudOff, Database, Eye, FileJson, FileText, Loader2, Loc
 import TableNode from "../nodes/TableNode.jsx";
 import RecordsModal from "../components/RecordsModal.jsx";
 import ThemeToggle from "../components/ThemeToggle.jsx";
+import ProfileButton from "../components/ProfileButton.jsx";
 import Sidebar from "../components/Sidebar.jsx";
 import SqlEditor from "../components/SqlEditor.jsx";
 import PropertiesPanel from "../components/PropertiesPanel.jsx";
@@ -175,7 +176,7 @@ function SharedProjectContent({ theme, onToggleTheme }) {
         );
     }
 
-    if (project.share_permission === "edit") {
+    if (project.can_edit) {
         return (
             <SharedEditableProject
                 token={token}
@@ -205,6 +206,7 @@ function SharedProjectContent({ theme, onToggleTheme }) {
 
                 <div className="flex items-center gap-2">
                     <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                    <ProfileButton />
                     <Link
                         to="/"
                         className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -546,6 +548,7 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
                 <div className="flex items-center gap-2">
                     <SharedSaveIndicator saveStatus={saveStatus} error={saveError} />
                     <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                    <ProfileButton />
                     <button
                         onClick={resetSchema}
                         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
@@ -682,7 +685,10 @@ function SharedShell({ title, theme, onToggleTheme, children }) {
                     <Database className="text-blue-600 dark:text-blue-400" />
                     {title}
                 </div>
-                <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                <div className="flex items-center gap-2">
+                    <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                    <ProfileButton />
+                </div>
             </header>
             <main className="px-6 py-8">
                 {children}

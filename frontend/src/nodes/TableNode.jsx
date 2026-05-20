@@ -1,5 +1,5 @@
 import { Handle, Position } from "reactflow";
-import { KeyRound, Link2, Settings, ShieldCheck, Table2 } from "lucide-react";
+import { Gauge, KeyRound, Link2, Settings, ShieldCheck, Table2 } from "lucide-react";
 
 export default function TableNode({ data, selected }) {
     function handleDoubleClick(event) {
@@ -27,6 +27,11 @@ export default function TableNode({ data, selected }) {
     }
 
     const recordsCount = Array.isArray(data.records?.rows) ? data.records.rows.length : 0;
+    const indexedFields = new Set();
+
+    (data.indexes || []).forEach((indexItem) => {
+        (indexItem.columns || []).forEach((column) => indexedFields.add(column));
+    });
 
     return (
         <div
@@ -87,6 +92,9 @@ export default function TableNode({ data, selected }) {
                                 {field.unique && (
                                     <ShieldCheck size={14} className="text-emerald-500" />
                                 )}
+                                {indexedFields.has(field.name) && !field.unique && (
+                                    <Gauge size={14} className="text-violet-500" />
+                                )}
 
                                 <span className="truncate text-[14px] font-bold text-slate-900 dark:text-slate-50">
                   {field.name}
@@ -96,6 +104,7 @@ export default function TableNode({ data, selected }) {
                             <div className="mt-1 text-[12px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                                 {field.type}
                                 {!field.nullable && " · NOT NULL"}
+                                {indexedFields.has(field.name) && " · IDX"}
                             </div>
                         </div>
 

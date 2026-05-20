@@ -21,9 +21,35 @@ class AiSchemaAssistantController extends Controller
         } catch (Throwable $exception) {
             report($exception);
 
-            return response()->json([
-                'message' => 'AI-помощник сейчас недоступен. Попробуйте позже.',
-            ], 502);
+            return response()->json($this->errorPayload($exception), 502);
         }
+    }
+
+    private function errorPayload(Throwable $exception): array
+    {
+        $payload = [
+            'message' => 'AI-помощник сейчас недоступен.',
+            'error' => [
+                'type' => class_basename($exception),
+                'reason' => $exception->getMessage(),
+                'provider' => 'NVIDIA NIM',
+                'model' => config('services.nvidia_nim.model'),
+                'base_url' => config('services.nvidia_nim.base_url'),
+            ],
+        ];
+
+        if ($exception->getPrevious()) {
+            $payload['error']['previous'] = [
+                'type' => class_basename($exception->getPrevious()),
+                'reason' => $exception->getPrevious()->getMessage(),
+            ];
+        }
+
+        if (config('app.debug')) {
+            $payload['error']['file'] = $exception->getFile();
+            $payload['error']['line'] = $exception->getLine();
+        }
+
+        return $payload;
     }
 }

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Bot, CheckCircle2, Cloud, CloudOff, Database, FileJson, FileText, Home, Loader2, RotateCcw, Share2 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle.jsx";
+import ProfileButton from "./ProfileButton.jsx";
 
 export default function TopBar({
                                    projectName,
@@ -51,6 +52,8 @@ export default function TopBar({
                     theme={theme}
                     onToggle={onToggleTheme}
                 />
+
+                <ProfileButton />
 
                 {onOpenAiAssistant && (
                     <button

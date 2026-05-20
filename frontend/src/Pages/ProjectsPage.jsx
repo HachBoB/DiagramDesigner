@@ -7,21 +7,33 @@ import {
     FileCode2,
     LayoutDashboard,
     LogOut,
+    Pencil,
     Plus,
+    Save,
     Search,
     Star,
-    Users
+    Trash2,
+    UserMinus,
+    Users,
+    X
 } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
+import ProfileButton from "../components/ProfileButton.jsx";
 import {
     createProject,
+    deleteProject,
     getApiErrorMessage,
+    getProjectShare,
     getStoredUser,
     isAuthenticated,
+    leaveProject,
     listProjects,
-    logout,
-    toggleProjectFavorite
+    removeProjectViewer,
+    toggleProjectFavorite,
+    updateProject,
+    updateProjectViewerPermission
 } from "../lib/api.js";
+import { DB_DIALECTS, DEFAULT_DIALECT } from "../types/databaseTypes.js";
 
 const demoProjects = [
     {
@@ -62,9 +74,22 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
     const [projects, setProjects] = useState([]);
     const [query, setQuery] = useState("");
     const [user, setUser] = useState(getStoredUser);
-    const [status, setStatus] = useState("idle");
+    const [status, setStatus] = useState(hasSession ? "loading" : "idle");
     const [error, setError] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+    const [deletingProjectId, setDeletingProjectId] = useState(null);
+    const [leavingProjectId, setLeavingProjectId] = useState(null);
+    const [settingsProject, setSettingsProject] = useState(null);
+    const [settingsForm, setSettingsForm] = useState({
+        name: "",
+        description: "",
+        dialect: DEFAULT_DIALECT
+    });
+    const [teamInfo, setTeamInfo] = useState(null);
+    const [settingsStatus, setSettingsStatus] = useState("idle");
+    const [settingsError, setSettingsError] = useState("");
+    const [removingViewerId, setRemovingViewerId] = useState(null);
+    const [changingViewerId, setChangingViewerId] = useState(null);
 
     const displayedProjects = hasSession ? projects : demoProjects;
 
@@ -140,13 +165,6 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         }
     }
 
-    async function handleLogout() {
-        await logout();
-        setUser(null);
-        setProjects([]);
-        navigate("/login");
-    }
-
     async function handleToggleFavorite(projectId, isFavorite) {
         if (!hasSession) {
             return;
@@ -174,6 +192,206 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         } catch (requestError) {
             setProjects(previousProjects);
             setError(getApiErrorMessage(requestError, "Не удалось обновить избранное."));
+        }
+    }
+
+    async function handleDeleteProject(project) {
+        if (!hasSession || project.access_role === "collaborator" || project.isDemo) {
+            return;
+        }
+
+        const confirmed = window.confirm(`Удалить проект "${project.name}"? Это действие нельзя отменить.`);
+
+        if (!confirmed) {
+            return;
+        }
+
+        const previousProjects = projects;
+
+        setDeletingProjectId(project.id);
+        setProjects((currentProjects) => currentProjects.filter((item) => item.id !== project.id));
+        setError("");
+
+        try {
+            await deleteProject(project.id);
+        } catch (requestError) {
+            setProjects(previousProjects);
+            setError(getApiErrorMessage(requestError, "Не удалось удалить проект."));
+        } finally {
+            setDeletingProjectId(null);
+        }
+    }
+
+    async function handleLeaveProject(project) {
+        if (!hasSession || project.access_role !== "collaborator" || project.isDemo) {
+            return;
+        }
+
+        const confirmed = window.confirm(`Выйти из командного проекта "${project.name}"? Он пропадёт из списка ваших проектов.`);
+
+        if (!confirmed) {
+            return;
+        }
+
+        const previousProjects = projects;
+
+        setLeavingProjectId(project.id);
+        setProjects((currentProjects) => currentProjects.filter((item) => item.id !== project.id));
+        setError("");
+
+        try {
+            await leaveProject(project.id);
+        } catch (requestError) {
+            setProjects(previousProjects);
+            setError(getApiErrorMessage(requestError, "Не удалось выйти из командного проекта."));
+        } finally {
+            setLeavingProjectId(null);
+        }
+    }
+
+    async function handleOpenSettings(project) {
+        if (project.isDemo) {
+            return;
+        }
+
+        setSettingsProject(project);
+        setSettingsForm({
+            name: project.name || "",
+            description: project.description || "",
+            dialect: project.dialect || DEFAULT_DIALECT
+        });
+        setTeamInfo(null);
+        setSettingsError("");
+
+        if (project.access_role !== "collaborator") {
+            setSettingsStatus("loading-team");
+
+            try {
+                const share = await getProjectShare(project.id);
+                setTeamInfo(share);
+                setSettingsStatus("idle");
+            } catch (requestError) {
+                setSettingsStatus("idle");
+                setSettingsError(getApiErrorMessage(requestError, "Не удалось загрузить команду проекта."));
+            }
+        } else {
+            setSettingsStatus("idle");
+        }
+    }
+
+    function handleCloseSettings() {
+        setSettingsProject(null);
+        setTeamInfo(null);
+        setSettingsError("");
+        setRemovingViewerId(null);
+        setChangingViewerId(null);
+    }
+
+    async function handleSaveSettings(event) {
+        event.preventDefault();
+
+        if (!settingsProject) {
+            return;
+        }
+
+        setSettingsStatus("saving");
+        setSettingsError("");
+
+        try {
+            const updatedProject = await updateProject(settingsProject.id, {
+                name: settingsForm.name.trim(),
+                description: settingsForm.description.trim() || null,
+                dialect: settingsForm.dialect
+            });
+
+            setProjects((currentProjects) =>
+                currentProjects.map((project) =>
+                    project.id === settingsProject.id
+                        ? {
+                            ...project,
+                            ...updatedProject,
+                            tables_count: project.tables_count,
+                            relations_count: project.relations_count,
+                            owner: updatedProject.owner || project.owner,
+                            viewers_count: project.viewers_count
+                        }
+                        : project
+                )
+            );
+            setSettingsProject((currentProject) => currentProject ? { ...currentProject, ...updatedProject } : currentProject);
+            setSettingsStatus("idle");
+        } catch (requestError) {
+            setSettingsStatus("idle");
+            setSettingsError(getApiErrorMessage(requestError, "Не удалось сохранить настройки проекта."));
+        }
+    }
+
+    async function handleRemoveViewer(viewer) {
+        if (!settingsProject || settingsProject.access_role === "collaborator") {
+            return;
+        }
+
+        const confirmed = window.confirm(`Удалить участника "${viewer.name}" из проекта?`);
+
+        if (!confirmed) {
+            return;
+        }
+
+        setRemovingViewerId(viewer.id);
+        setSettingsError("");
+
+        try {
+            await removeProjectViewer(settingsProject.id, viewer.id);
+            setTeamInfo((currentInfo) => currentInfo
+                ? {
+                    ...currentInfo,
+                    viewers: currentInfo.viewers.filter((item) => item.id !== viewer.id)
+                }
+                : currentInfo);
+            setProjects((currentProjects) =>
+                currentProjects.map((project) =>
+                    project.id === settingsProject.id
+                        ? {
+                            ...project,
+                            viewers_count: Math.max((project.viewers_count || 1) - 1, 0),
+                            is_team_project: Math.max((project.viewers_count || 1) - 1, 0) > 0
+                        }
+                        : project
+                )
+            );
+        } catch (requestError) {
+            setSettingsError(getApiErrorMessage(requestError, "Не удалось удалить участника."));
+        } finally {
+            setRemovingViewerId(null);
+        }
+    }
+
+    async function handleChangeViewerPermission(viewer, permission) {
+        if (!settingsProject || settingsProject.access_role === "collaborator") {
+            return;
+        }
+
+        const previousTeamInfo = teamInfo;
+
+        setChangingViewerId(viewer.id);
+        setSettingsError("");
+        setTeamInfo((currentInfo) => currentInfo
+            ? {
+                ...currentInfo,
+                viewers: currentInfo.viewers.map((item) =>
+                    item.id === viewer.id ? { ...item, permission } : item
+                )
+            }
+            : currentInfo);
+
+        try {
+            const updatedShare = await updateProjectViewerPermission(settingsProject.id, viewer.id, permission);
+            setTeamInfo(updatedShare);
+        } catch (requestError) {
+            setTeamInfo(previousTeamInfo);
+            setSettingsError(getApiErrorMessage(requestError, "Не удалось изменить права участника."));
+        } finally {
+            setChangingViewerId(null);
         }
     }
 
@@ -205,14 +423,7 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
                         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
                         {hasSession ? (
-                            <button
-                                type="button"
-                                onClick={handleLogout}
-                                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                            >
-                                <LogOut size={16} />
-                                Выйти
-                            </button>
+                            <ProfileButton onProfileUpdated={setUser} />
                         ) : (
                             <Link
                                 to="/login"
@@ -337,10 +548,32 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
                             key={project.id}
                             project={project}
                             onToggleFavorite={handleToggleFavorite}
+                            onDelete={handleDeleteProject}
+                            onLeave={handleLeaveProject}
+                            onOpenSettings={handleOpenSettings}
+                            isDeleting={deletingProjectId === project.id}
+                            isLeaving={leavingProjectId === project.id}
                         />
                     ))}
                 </section>
             </main>
+
+            {settingsProject && (
+                <ProjectSettingsModal
+                    project={settingsProject}
+                    form={settingsForm}
+                    teamInfo={teamInfo}
+                    status={settingsStatus}
+                    error={settingsError}
+                    removingViewerId={removingViewerId}
+                    changingViewerId={changingViewerId}
+                    onChange={setSettingsForm}
+                    onClose={handleCloseSettings}
+                    onSave={handleSaveSettings}
+                    onRemoveViewer={handleRemoveViewer}
+                    onChangeViewerPermission={handleChangeViewerPermission}
+                />
+            )}
         </div>
     );
 }
@@ -377,31 +610,107 @@ function CreateProjectCard({ onCreate, isCreating }) {
     );
 }
 
-function ProjectCard({ project, onToggleFavorite }) {
-    const editorPath = project.isDemo ? "/editor" : `/editor/${project.id}`;
+function ProjectCard({
+    project,
+    onToggleFavorite,
+    onDelete,
+    onLeave,
+    onOpenSettings,
+    isDeleting,
+    isLeaving
+}) {
+    const isTeamProject = Boolean(project.is_team_project);
+    const isCollaborator = project.access_role === "collaborator";
+    const canEdit = !project.isDemo && Boolean(project.can_edit ?? (!isCollaborator || project.share_permission === "edit"));
+    const canDelete = !project.isDemo && !isCollaborator;
+    const description = project.description
+        || (isCollaborator && project.owner?.name
+            ? `Проект владельца ${project.owner.name}.`
+            : "Описание пока не добавлено.");
+    const editorPath = project.isDemo
+        ? "/editor"
+        : isCollaborator && project.share_token
+            ? `/share/${project.share_token}`
+            : `/editor/${project.id}`;
 
     return (
         <div className="group rounded-3xl border border-slate-200 bg-white p-5 shadow-soft transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-500">
             <div className="mb-5 flex items-start justify-between gap-4">
-                <Link
-                    to={editorPath}
-                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300"
-                >
-                    <Database size={24} />
-                </Link>
+                <div className="flex items-center gap-3">
+                    <Link
+                        to={editorPath}
+                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+                            isTeamProject
+                                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300"
+                                : "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300"
+                        }`}
+                        title={isTeamProject ? "Командный проект" : "Личный проект"}
+                    >
+                        {isTeamProject ? <Users size={24} /> : <Database size={24} />}
+                    </Link>
 
-                <button
-                    type="button"
-                    onClick={() => onToggleFavorite(project.id, project.is_favorite)}
-                    className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${
-                        project.is_favorite
-                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-                            : "bg-slate-50 text-slate-500 dark:bg-slate-950 dark:text-slate-400"
-                    }`}
-                >
-                    <Star size={13} fill={project.is_favorite ? "currentColor" : "none"} />
-                    Избранное
-                </button>
+                    {isTeamProject && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                            <Users size={13} />
+                            Командный
+                        </span>
+                    )}
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-2">
+                    {canEdit && (
+                        <button
+                            type="button"
+                            onClick={() => onOpenSettings(project)}
+                            className="flex items-center gap-1 rounded-full bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+                            title="Изменить проект"
+                        >
+                            <Pencil size={13} />
+                            Изменить
+                        </button>
+                    )}
+
+                    {!isCollaborator && (
+                        <button
+                            type="button"
+                            onClick={() => onToggleFavorite(project.id, project.is_favorite)}
+                            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${
+                                project.is_favorite
+                                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                                    : "bg-slate-50 text-slate-500 dark:bg-slate-950 dark:text-slate-400"
+                            }`}
+                        >
+                            <Star size={13} fill={project.is_favorite ? "currentColor" : "none"} />
+                            Избранное
+                        </button>
+                    )}
+
+                    {canDelete && (
+                        <button
+                            type="button"
+                            onClick={() => onDelete(project)}
+                            disabled={isDeleting}
+                            className="flex items-center gap-1 rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950"
+                            title="Удалить проект"
+                        >
+                            <Trash2 size={13} />
+                            {isDeleting ? "Удаляем..." : "Удалить"}
+                        </button>
+                    )}
+
+                    {isCollaborator && (
+                        <button
+                            type="button"
+                            onClick={() => onLeave(project)}
+                            disabled={isLeaving}
+                            className="flex items-center gap-1 rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950"
+                            title="Выйти из командного проекта"
+                        >
+                            <LogOut size={13} />
+                            {isLeaving ? "Выходим..." : "Выйти"}
+                        </button>
+                    )}
+                </div>
             </div>
 
             <Link to={editorPath}>
@@ -410,8 +719,15 @@ function ProjectCard({ project, onToggleFavorite }) {
                 </h3>
 
                 <p className="mt-2 min-h-[48px] text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    {project.description || "Описание пока не добавлено."}
+                    {description}
                 </p>
+
+                {isCollaborator && project.owner && (
+                    <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                        <Users size={13} />
+                        Владелец: {project.owner.name}
+                    </div>
+                )}
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                     <MiniInfo icon={<Database size={15} />} label="Таблиц" value={project.tables_count || 0} />
@@ -423,6 +739,193 @@ function ProjectCard({ project, onToggleFavorite }) {
                     Обновлено: {formatDate(project.updated_at)}
                 </div>
             </Link>
+        </div>
+    );
+}
+
+function ProjectSettingsModal({
+    project,
+    form,
+    teamInfo,
+    status,
+    error,
+    removingViewerId,
+    changingViewerId,
+    onChange,
+    onClose,
+    onSave,
+    onRemoveViewer,
+    onChangeViewerPermission
+}) {
+    const isOwner = project.access_role !== "collaborator";
+    const viewers = teamInfo?.viewers || [];
+    const isSaving = status === "saving";
+    const isLoadingTeam = status === "loading-team";
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6">
+            <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+                <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                            <Pencil size={13} />
+                            Настройки проекта
+                        </div>
+
+                        <h3 className="text-2xl font-extrabold text-slate-950 dark:text-white">
+                            {project.name}
+                        </h3>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                        aria-label="Закрыть"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+
+                {error && (
+                    <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                        {error}
+                    </div>
+                )}
+
+                <form onSubmit={onSave} className="grid gap-4">
+                    <label className="grid gap-2">
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                            Название
+                        </span>
+                        <input
+                            value={form.name}
+                            onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                            placeholder="Название проекта"
+                        />
+                    </label>
+
+                    <label className="grid gap-2">
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                            Описание
+                        </span>
+                        <textarea
+                            value={form.description}
+                            onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))}
+                            rows={3}
+                            className="resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                            placeholder="Коротко о схеме"
+                        />
+                    </label>
+
+                    <label className="grid gap-2">
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                            База данных
+                        </span>
+                        <select
+                            value={form.dialect}
+                            onChange={(event) => onChange((current) => ({ ...current, dialect: event.target.value }))}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                        >
+                            {Object.entries(DB_DIALECTS).map(([key, item]) => (
+                                <option key={key} value={key}>
+                                    {item.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+
+                    <div className="flex flex-wrap justify-end gap-3 pt-2">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                            Отмена
+                        </button>
+
+                        <button
+                            type="submit"
+                            disabled={isSaving || !form.name.trim()}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Save size={16} />
+                            {isSaving ? "Сохраняем..." : "Сохранить"}
+                        </button>
+                    </div>
+                </form>
+
+                {isOwner && (
+                    <section className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <h4 className="text-lg font-extrabold text-slate-950 dark:text-white">
+                                    Команда проекта
+                                </h4>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Здесь видны пользователи, которые открывали проект по ссылке.
+                                </p>
+                            </div>
+
+                            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                {viewers.length}
+                            </span>
+                        </div>
+
+                        {isLoadingTeam ? (
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+                                Загружаем участников...
+                            </div>
+                        ) : viewers.length > 0 ? (
+                            <div className="grid gap-2">
+                                {viewers.map((viewer) => (
+                                    <div
+                                        key={viewer.id}
+                                        className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950"
+                                    >
+                                        <div>
+                                            <div className="font-bold text-slate-950 dark:text-white">
+                                                {viewer.name}
+                                            </div>
+                                            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                                {viewer.email || "Гость без аккаунта"}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <select
+                                                value={viewer.permission || "view"}
+                                                onChange={(event) => onChangeViewerPermission(viewer, event.target.value)}
+                                                disabled={viewer.is_guest || changingViewerId === viewer.id || removingViewerId === viewer.id}
+                                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                                                title={viewer.is_guest ? "Гость не привязан к аккаунту" : "Права участника"}
+                                            >
+                                                <option value="view">Просмотр</option>
+                                                <option value="edit">Редактирование</option>
+                                            </select>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => onRemoveViewer(viewer)}
+                                                disabled={removingViewerId === viewer.id}
+                                                className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950"
+                                            >
+                                                <UserMinus size={14} />
+                                                {removingViewerId === viewer.id ? "Удаляем..." : "Удалить"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+                                В команде пока никого нет.
+                            </div>
+                        )}
+                    </section>
+                )}
+            </div>
         </div>
     );
 }

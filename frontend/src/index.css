@@ -56,39 +56,89 @@ textarea {
 pre,
 code,
 kbd,
-samp,
-.schema-scroll,
-.schema-line-numbers {
+samp {
   font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-.schema-scroll {
-  color: transparent;
-  font-weight: 500;
-  letter-spacing: 0;
-  tab-size: 2;
-  -webkit-text-fill-color: transparent;
+.schema-codemirror {
+  height: 100%;
 }
 
-.schema-highlight {
+.schema-codemirror .cm-editor {
+  height: 100%;
+  background: #ffffff;
   color: #1e293b;
   font-weight: 500;
-  letter-spacing: 0;
-  margin: 0;
-  tab-size: 2;
 }
 
-.schema-highlight::-webkit-scrollbar {
-  display: none;
+.schema-codemirror .cm-focused {
+  outline: none;
 }
 
-.schema-highlight {
-  scrollbar-width: none;
+.schema-codemirror .cm-scroller {
+  font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.schema-codemirror .cm-content {
+  min-height: 100%;
+  padding: 1rem;
+  caret-color: #0f172a;
+}
+
+.schema-codemirror .cm-line {
+  padding: 0;
+}
+
+.schema-codemirror .cm-gutters {
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+  color: #94a3b8;
+  font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.schema-codemirror .cm-lineNumbers .cm-gutterElement {
+  min-width: 3rem;
+  padding: 0 0.75rem 0 0.5rem;
+}
+
+.schema-codemirror .cm-line-error {
+  color: #ef4444;
+  font-weight: 800;
+}
+
+.schema-codemirror .cm-selectionBackground,
+.schema-codemirror .cm-content ::selection {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.dark .schema-codemirror .cm-editor {
+  background: #020617;
+  color: #f8fafc;
+}
+
+.dark .schema-codemirror .cm-content {
+  caret-color: #f8fafc;
+}
+
+.dark .schema-codemirror .cm-gutters {
+  background: rgba(15, 23, 42, 0.7);
+  border-right-color: #1e293b;
+  color: #64748b;
+}
+
+.dark .schema-codemirror .cm-line-error {
+  color: #fca5a5;
 }
 
 .sql-token-keyword {
   color: #2563eb;
-  font-weight: 700;
 }
 
 .sql-token-type {
@@ -112,7 +162,7 @@ samp,
 }
 
 .sql-token-bracket {
-  font-weight: 800;
+  font-weight: inherit;
 }
 
 .sql-token-bracket-0 {
@@ -133,10 +183,6 @@ samp,
 
 .sql-token-bracket-4 {
   color: #0891b2;
-}
-
-.dark .schema-highlight {
-  color: #f8fafc;
 }
 
 .dark .sql-token-keyword {

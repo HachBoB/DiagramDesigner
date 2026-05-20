@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,6 +62,30 @@ class AuthController extends Controller
     {
         return response()->json([
             'data' => $this->userPayload($request->user()),
+        ]);
+    }
+
+    public function update(UpdateProfileRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validated();
+
+        if (filled($data['password'] ?? null)) {
+            if (! Hash::check($data['current_password'] ?? '', $user->password)) {
+                throw ValidationException::withMessages([
+                    'current_password' => ['Текущий пароль указан неверно.'],
+                ]);
+            }
+
+            $user->password = $data['password'];
+        }
+
+        $user->name = $data['name'];
+        $user->email = $data['email'];
+        $user->save();
+
+        return response()->json([
+            'data' => $this->userPayload($user->refresh()),
         ]);
     }
 

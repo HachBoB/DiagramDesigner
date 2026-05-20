@@ -8,6 +8,7 @@ use App\Http\Requests\Project\UpdateProjectRequest;
 use App\Http\Resources\ProjectListResource;
 use App\Http\Resources\ProjectResource;
 use App\Models\Project;
+use App\Models\ProjectViewer;
 use App\Services\DefaultSchemaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,10 +18,26 @@ class ProjectController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $projects = $request->user()
+        $ownedProjects = $request->user()
             ->projects()
-            ->latest('updated_at')
+            ->with('user')
+            ->withCount('viewers')
             ->get();
+
+        $sharedProjects = Project::query()
+            ->with('user')
+            ->withCount('viewers')
+            ->whereHas('viewers', fn ($query) => $query->where('user_id', $request->user()->id))
+            ->where('user_id', '!=', $request->user()->id)
+            ->whereIn('share_access', ['link', 'password'])
+            ->whereNotNull('share_token')
+            ->get();
+
+        $projects = $ownedProjects
+            ->map(fn (Project $project) => $this->withAccessMeta($request, $project, 'owner'))
+            ->merge($sharedProjects->map(fn (Project $project) => $this->withAccessMeta($request, $project, 'collaborator')))
+            ->sortByDesc(fn (Project $project) => $project->updated_at)
+            ->values();
 
         return ProjectListResource::collection($projects);
     }
@@ -42,18 +59,18 @@ class ProjectController extends Controller
 
     public function show(Request $request, Project $project): ProjectResource
     {
-        $this->ensureOwnsProject($request, $project);
+        $this->ensureCanViewProject($request, $project);
 
-        return ProjectResource::make($project);
+        return ProjectResource::make($this->withAccessMeta($request, $project->load('user'), $this->accessRole($request, $project)));
     }
 
     public function update(UpdateProjectRequest $request, Project $project): ProjectResource
     {
-        $this->ensureOwnsProject($request, $project);
+        $this->ensureCanEditProject($request, $project);
 
         $project->update($request->validated());
 
-        return ProjectResource::make($project->refresh());
+        return ProjectResource::make($this->withAccessMeta($request, $project->refresh()->load('user'), $this->accessRole($request, $project)));
     }
 
     public function destroy(Request $request, Project $project): JsonResponse
@@ -110,7 +127,15 @@ class ProjectController extends Controller
 
     public function lastOpened(Request $request, Project $project): ProjectResource
     {
-        $this->ensureOwnsProject($request, $project);
+        $this->ensureCanViewProject($request, $project);
+
+        if ($project->user_id !== $request->user()->id) {
+            $project->viewers()
+                ->where('user_id', $request->user()->id)
+                ->update(['last_viewed_at' => now()]);
+
+            return ProjectResource::make($this->withAccessMeta($request, $project->refresh()->load('user'), 'collaborator'));
+        }
 
         $project->update([
             'last_opened_at' => now(),
@@ -122,5 +147,61 @@ class ProjectController extends Controller
     private function ensureOwnsProject(Request $request, Project $project): void
     {
         abort_unless($project->user_id === $request->user()->id, 404);
+    }
+
+    private function ensureCanViewProject(Request $request, Project $project): void
+    {
+        if ($project->user_id === $request->user()->id) {
+            return;
+        }
+
+        abort_unless($this->isRegisteredViewer($request, $project), 404);
+    }
+
+    private function ensureCanEditProject(Request $request, Project $project): void
+    {
+        if ($project->user_id === $request->user()->id) {
+            return;
+        }
+
+        abort_unless(
+            $this->registeredViewer($request, $project)?->permission === 'edit',
+            403
+        );
+    }
+
+    private function isRegisteredViewer(Request $request, Project $project): bool
+    {
+        return $this->registeredViewer($request, $project) !== null;
+    }
+
+    private function registeredViewer(Request $request, Project $project): ?ProjectViewer
+    {
+        if (! $project->isShared()) {
+            return null;
+        }
+
+        return $project->viewers()
+            ->where('user_id', $request->user()->id)
+            ->first();
+    }
+
+    private function accessRole(Request $request, Project $project): string
+    {
+        return $project->user_id === $request->user()->id ? 'owner' : 'collaborator';
+    }
+
+    private function withAccessMeta(Request $request, Project $project, string $accessRole): Project
+    {
+        $viewerPermission = $accessRole === 'owner'
+            ? 'edit'
+            : ($this->registeredViewer($request, $project)?->permission ?? 'view');
+
+        $project->access_role = $accessRole;
+        $project->is_team_project = $accessRole !== 'owner' || ($project->viewers_count ?? 0) > 0;
+        $project->viewer_permission = $viewerPermission;
+        $project->can_edit = $accessRole === 'owner' || $viewerPermission === 'edit';
+
+        return $project;
     }
 }

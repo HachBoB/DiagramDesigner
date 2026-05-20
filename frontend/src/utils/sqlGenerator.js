@@ -92,8 +92,21 @@ const TYPE_MAP = {
 };
 
 function normalizeType(type, dialect) {
-    const clean = String(type || "TEXT").toUpperCase();
-    return TYPE_MAP[dialect]?.[clean] || clean;
+    const clean = String(type || "TEXT").trim().toUpperCase();
+    const typeMatch = clean.match(/^([A-Z][A-Z0-9_ ]*?)(\s*\(([^)]*)\))?$/);
+    const baseType = typeMatch?.[1]?.trim() || clean;
+    const params = typeMatch?.[3] ? `(${typeMatch[3]})` : "";
+    const mapped = TYPE_MAP[dialect]?.[baseType];
+
+    if (!mapped) {
+        return clean;
+    }
+
+    if (params && ["VARCHAR", "CHAR", "DECIMAL", "NUMERIC", "NUMBER", "VARCHAR2", "NVARCHAR", "NVARCHAR2"].some((item) => mapped.startsWith(item))) {
+        return mapped.replace(/\([^)]*\)/, "") + params;
+    }
+
+    return mapped;
 }
 
 function getTableNameById(nodes, id) {
@@ -124,14 +137,40 @@ function formatRecordValue(value) {
     return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
+function quoteIdentifier(identifier, dialect) {
+    const clean = String(identifier || "unnamed")
+        .trim()
+        .replace(/\s+/g, "_");
+
+    if (dialect === "mysql") {
+        return `\`${clean.replace(/`/g, "``")}\``;
+    }
+
+    if (dialect === "mssql") {
+        return `[${clean.replace(/]/g, "]]")}]`;
+    }
+
+    return `"${clean.replace(/"/g, "\"\"")}"`;
+}
+
+function buildIndexName(tableName, indexItem, indexNumber) {
+    const columns = Array.isArray(indexItem.columns) ? indexItem.columns : [];
+    const fallback = `idx_${tableName}_${columns.join("_") || indexNumber}`;
+
+    return String(indexItem.name || fallback)
+        .trim()
+        .replace(/\s+/g, "_");
+}
+
 export function generateSQL(nodes, edges, dialect = "postgresql") {
-    const statements = nodes.map((node) => {
+    const tableStatements = nodes.map((node) => {
         const table = node.data;
         const primaryKeys = table.fields.filter((field) => field.pk).map((field) => field.name);
+        const tableName = quoteIdentifier(table.name, dialect);
 
         const columns = table.fields.map((field) => {
             const parts = [
-                `  ${field.name}`,
+                `  ${quoteIdentifier(field.name, dialect)}`,
                 normalizeType(field.type, dialect)
             ];
 
@@ -147,7 +186,7 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
         });
 
         if (primaryKeys.length > 0) {
-            columns.push(`  PRIMARY KEY (${primaryKeys.join(", ")})`);
+            columns.push(`  PRIMARY KEY (${primaryKeys.map((fieldName) => quoteIdentifier(fieldName, dialect)).join(", ")})`);
         }
 
         const foreignKeys = edges
@@ -165,16 +204,38 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
 
                 const sourceTableName = getTableNameById(nodes, edge.source);
 
-                return `  FOREIGN KEY (${targetField.name}) REFERENCES ${sourceTableName}(${sourceField.name})`;
+                return `  FOREIGN KEY (${quoteIdentifier(targetField.name, dialect)}) REFERENCES ${quoteIdentifier(sourceTableName, dialect)}(${quoteIdentifier(sourceField.name, dialect)})`;
             })
             .filter(Boolean);
 
         columns.push(...foreignKeys);
 
-        return `CREATE TABLE ${table.name} (\n${columns.join(",\n")}\n);`;
+        return `CREATE TABLE ${tableName} (\n${columns.join(",\n")}\n);`;
     });
 
-    return statements.join("\n\n");
+    const indexStatements = nodes.flatMap((node) => {
+        const table = node.data;
+        const indexes = Array.isArray(table.indexes) ? table.indexes : [];
+
+        return indexes
+            .map((indexItem, indexNumber) => {
+                const columns = Array.isArray(indexItem.columns)
+                    ? indexItem.columns.filter((column) => table.fields.some((field) => field.name === column))
+                    : [];
+
+                if (columns.length === 0) {
+                    return "";
+                }
+
+                const unique = indexItem.unique ? "UNIQUE " : "";
+                const indexName = buildIndexName(table.name, indexItem, indexNumber + 1);
+
+                return `CREATE ${unique}INDEX ${quoteIdentifier(indexName, dialect)} ON ${quoteIdentifier(table.name, dialect)} (${columns.map((column) => quoteIdentifier(column, dialect)).join(", ")});`;
+            })
+            .filter(Boolean);
+    });
+
+    return [...tableStatements, ...indexStatements].join("\n\n");
 }
 
 export function generateDBML(nodes, edges) {
@@ -189,6 +250,29 @@ export function generateDBML(nodes, edges) {
 
             return `  ${field.name} ${field.type}${flags.length ? ` [${flags.join(", ")}]` : ""}`;
         });
+
+        const indexes = Array.isArray(node.data.indexes) ? node.data.indexes : [];
+        const indexLines = indexes
+            .map((indexItem, indexNumber) => {
+                const columns = Array.isArray(indexItem.columns)
+                    ? indexItem.columns.filter(Boolean)
+                    : [];
+
+                if (columns.length === 0) {
+                    return "";
+                }
+
+                const name = indexItem.name || `idx_${node.data.name}_${columns.join("_") || indexNumber + 1}`;
+                const columnsPart = columns.length === 1 ? columns[0] : `(${columns.join(", ")})`;
+                const flags = indexItem.unique ? " [unique]" : "";
+
+                return `    ${name} ${columnsPart}${flags}`;
+            })
+            .filter(Boolean);
+
+        if (indexLines.length > 0) {
+            lines.push("", "  Indexes {", ...indexLines, "  }");
+        }
 
         return `Table ${node.data.name} {\n${lines.join("\n")}\n}`;
     });

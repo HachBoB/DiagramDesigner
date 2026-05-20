@@ -5,6 +5,7 @@ namespace App\Services\Ai;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 class NvidiaNimService
 {
@@ -26,7 +27,8 @@ class NvidiaNimService
             $request = $request->withoutVerifying();
         }
 
-        $response = $request->post($this->endpoint('/chat/completions'), [
+        try {
+            $response = $request->post($this->endpoint('/chat/completions'), [
                 'model' => config('services.nvidia_nim.model'),
                 'temperature' => 0.25,
                 'max_tokens' => $mode === 'edit'
@@ -42,14 +44,29 @@ class NvidiaNimService
                         'content' => $this->userPrompt($payload),
                     ],
                 ],
-        ]);
+            ]);
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'Не удалось подключиться к NVIDIA NIM: '.$exception->getMessage(),
+                previous: $exception
+            );
+        }
 
         try {
             $response->throw();
         } catch (RequestException $exception) {
             report($exception);
 
-            throw new RuntimeException('NVIDIA NIM did not return a successful response.');
+            $body = $response->json();
+            $providerMessage = data_get($body, 'error.message')
+                ?: data_get($body, 'message')
+                ?: $response->body();
+
+            throw new RuntimeException(sprintf(
+                'NVIDIA NIM вернул ошибку HTTP %s: %s',
+                $response->status(),
+                mb_substr((string) $providerMessage, 0, 700)
+            ), previous: $exception);
         }
 
         $content = data_get($response->json(), 'choices.0.message.content');

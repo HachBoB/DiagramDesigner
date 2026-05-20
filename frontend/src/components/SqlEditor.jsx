@@ -1,4 +1,6 @@
-import { forwardRef, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, lineNumbers } from "@codemirror/view";
 import { AlertTriangle, CheckCircle2, Code2 } from "lucide-react";
 
 const KEYWORDS = new Set([
@@ -55,20 +57,17 @@ function findCommentIndex(line) {
     return -1;
 }
 
-function highlightDbml(value) {
-    const lines = value.split("\n");
-    const elements = [];
-    let bracketDepth = 0;
-    let key = 0;
-
-    function push(content, className = "") {
-        elements.push(
-            <span key={key} className={className}>
-                {content}
-            </span>
-        );
-        key += 1;
+function addMark(builder, from, to, className) {
+    if (to > from) {
+        builder.add(from, to, Decoration.mark({ class: className }));
     }
+}
+
+function buildDbmlDecorations(doc) {
+    const builder = new RangeSetBuilder();
+    const lines = doc.toString().split("\n");
+    let offset = 0;
+    let bracketDepth = 0;
 
     function bracketClass(char) {
         if (char === "}" || char === ")" || char === "]") {
@@ -84,14 +83,14 @@ function highlightDbml(value) {
         return className;
     }
 
-    lines.forEach((line, lineIndex) => {
+    lines.forEach((line) => {
         const commentIndex = findCommentIndex(line);
         const codePart = commentIndex >= 0 ? line.slice(0, commentIndex) : line;
-        const commentPart = commentIndex >= 0 ? line.slice(commentIndex) : "";
         let index = 0;
 
         while (index < codePart.length) {
             const char = codePart[index];
+            const absoluteIndex = offset + index;
 
             if (char === "'" || char === "\"") {
                 const quote = char;
@@ -106,13 +105,13 @@ function highlightDbml(value) {
                     end += 1;
                 }
 
-                push(codePart.slice(index, end), "sql-token-string");
+                addMark(builder, absoluteIndex, offset + end, "sql-token-string");
                 index = end;
                 continue;
             }
 
             if ("{}()[]".includes(char)) {
-                push(char, bracketClass(char));
+                addMark(builder, absoluteIndex, absoluteIndex + 1, bracketClass(char));
                 index += 1;
                 continue;
             }
@@ -121,7 +120,7 @@ function highlightDbml(value) {
                 const match = codePart.slice(index).match(/^\d+(\.\d+)?/);
 
                 if (match) {
-                    push(match[0], "sql-token-number");
+                    addMark(builder, absoluteIndex, absoluteIndex + match[0].length, "sql-token-number");
                     index += match[0].length;
                     continue;
                 }
@@ -135,11 +134,9 @@ function highlightDbml(value) {
                     const lowerWord = word.toLowerCase();
 
                     if (KEYWORDS.has(lowerWord)) {
-                        push(word, "sql-token-keyword");
+                        addMark(builder, absoluteIndex, absoluteIndex + word.length, "sql-token-keyword");
                     } else if (TYPES.has(lowerWord)) {
-                        push(word, "sql-token-type");
-                    } else {
-                        push(word);
+                        addMark(builder, absoluteIndex, absoluteIndex + word.length, "sql-token-type");
                     }
 
                     index += word.length;
@@ -148,26 +145,38 @@ function highlightDbml(value) {
             }
 
             if (":,<>-=".includes(char)) {
-                push(char, "sql-token-operator");
-                index += 1;
-                continue;
+                addMark(builder, absoluteIndex, absoluteIndex + 1, "sql-token-operator");
             }
 
-            push(char);
             index += 1;
         }
 
-        if (commentPart) {
-            push(commentPart, "sql-token-comment");
+        if (commentIndex >= 0) {
+            addMark(builder, offset + commentIndex, offset + line.length, "sql-token-comment");
         }
 
-        if (lineIndex < lines.length - 1) {
-            elements.push("\n");
-        }
+        offset += line.length + 1;
     });
 
-    return elements;
+    return builder.finish();
 }
+
+const dbmlHighlightPlugin = ViewPlugin.fromClass(
+    class {
+        constructor(view) {
+            this.decorations = buildDbmlDecorations(view.state.doc);
+        }
+
+        update(update) {
+            if (update.docChanged) {
+                this.decorations = buildDbmlDecorations(update.state.doc);
+            }
+        }
+    },
+    {
+        decorations: (plugin) => plugin.decorations
+    }
+);
 
 const SqlEditor = forwardRef(function SqlEditor(
     {
@@ -175,34 +184,137 @@ const SqlEditor = forwardRef(function SqlEditor(
         onChange,
         errors = []
     },
-    textareaRef
+    editorApiRef
 ) {
-    const lineNumbersRef = useRef(null);
-    const highlightRef = useRef(null);
+    const containerRef = useRef(null);
+    const viewRef = useRef(null);
+    const initialValueRef = useRef(value);
+    const onChangeRef = useRef(onChange);
+    const syncingFromPropsRef = useRef(false);
     const hasErrors = errors.length > 0;
-
-    const lineCount = useMemo(() => {
-        return Math.max(1, value.split("\n").length);
-    }, [value]);
 
     const errorLines = useMemo(() => {
         return new Set(errors.map((error) => error.line));
     }, [errors]);
 
-    const highlightedCode = useMemo(() => {
-        return highlightDbml(value);
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
+
+    useEffect(() => {
+        if (!containerRef.current || viewRef.current) {
+            return;
+        }
+
+        const view = new EditorView({
+            parent: containerRef.current,
+            state: EditorState.create({
+                doc: initialValueRef.current,
+                extensions: [
+                    lineNumbers({
+                        formatNumber: (lineNumber) => String(lineNumber),
+                        domEventHandlers: {
+                            mousedown: () => true
+                        }
+                    }),
+                    dbmlHighlightPlugin,
+                    EditorView.updateListener.of((update) => {
+                        if (update.docChanged && !syncingFromPropsRef.current) {
+                            onChangeRef.current(update.state.doc.toString());
+                        }
+                    }),
+                    EditorView.theme({
+                        "&": {
+                            height: "100%"
+                        },
+                        ".cm-scroller": {
+                            overflow: "auto"
+                        }
+                    })
+                ]
+            })
+        });
+
+        viewRef.current = view;
+
+        return () => {
+            view.destroy();
+            viewRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        const view = viewRef.current;
+
+        if (!view) {
+            return;
+        }
+
+        const currentValue = view.state.doc.toString();
+
+        if (currentValue === value) {
+            return;
+        }
+
+        syncingFromPropsRef.current = true;
+        view.dispatch({
+            changes: {
+                from: 0,
+                to: currentValue.length,
+                insert: value
+            }
+        });
+        syncingFromPropsRef.current = false;
     }, [value]);
 
-    function handleScroll(event) {
-        if (lineNumbersRef.current) {
-            lineNumbersRef.current.scrollTop = event.currentTarget.scrollTop;
+    useEffect(() => {
+        const view = viewRef.current;
+
+        if (!view) {
+            return;
         }
 
-        if (highlightRef.current) {
-            highlightRef.current.scrollTop = event.currentTarget.scrollTop;
-            highlightRef.current.scrollLeft = event.currentTarget.scrollLeft;
+        view.dom.querySelectorAll(".cm-lineNumbers .cm-gutterElement").forEach((element) => {
+            const lineNumber = Number(element.textContent);
+            element.classList.toggle("cm-line-error", errorLines.has(lineNumber));
+        });
+    }, [errorLines, value]);
+
+    useImperativeHandle(editorApiRef, () => ({
+        focus() {
+            viewRef.current?.focus();
+        },
+        setSelectionRange(start, end) {
+            const view = viewRef.current;
+
+            if (!view) {
+                return;
+            }
+
+            view.dispatch({
+                selection: {
+                    anchor: start,
+                    head: end
+                },
+                effects: EditorView.scrollIntoView(start, {
+                    y: "center"
+                })
+            });
+        },
+        get value() {
+            return viewRef.current?.state.doc.toString() || "";
+        },
+        get scrollTop() {
+            return viewRef.current?.scrollDOM.scrollTop || 0;
+        },
+        set scrollTop(nextScrollTop) {
+            const view = viewRef.current;
+
+            if (view) {
+                view.scrollDOM.scrollTop = nextScrollTop;
+            }
         }
-    }
+    }), []);
 
     return (
         <section className="flex w-[390px] shrink-0 flex-col border-r border-slate-200 bg-white text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
@@ -225,53 +337,8 @@ const SqlEditor = forwardRef(function SqlEditor(
                 )}
             </div>
 
-            <div className="flex min-h-0 flex-1 bg-white dark:bg-slate-950">
-                <div
-                    ref={lineNumbersRef}
-                    className="schema-line-numbers w-12 shrink-0 overflow-hidden border-r border-slate-200 bg-slate-50 py-4 text-right font-mono text-[13px] leading-6 text-slate-400 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-500"
-                >
-                    {Array.from({ length: lineCount }).map((_, index) => {
-                        const lineNumber = index + 1;
-                        const isErrorLine = errorLines.has(lineNumber);
-
-                        return (
-                            <div
-                                key={lineNumber}
-                                className={[
-                                    "h-6 pr-3",
-                                    isErrorLine
-                                        ? "font-bold text-red-500 dark:text-red-300"
-                                        : "text-slate-400 dark:text-slate-500"
-                                ].join(" ")}
-                            >
-                                {lineNumber}
-                            </div>
-                        );
-                    })}
-                </div>
-
-                <div className="relative min-h-0 flex-1 overflow-hidden bg-white dark:bg-slate-950">
-                    <pre
-                        ref={highlightRef}
-                        aria-hidden="true"
-                        className="schema-highlight pointer-events-none absolute inset-0 m-0 overflow-auto whitespace-pre p-4 pl-4 font-mono text-[15px] font-medium leading-6"
-                    >
-                        <code>{highlightedCode}</code>
-                    </pre>
-
-                    <textarea
-                        ref={textareaRef}
-                        value={value}
-                        onChange={(event) => onChange(event.target.value)}
-                        onScroll={handleScroll}
-                        spellCheck={false}
-                        wrap="off"
-                        className={[
-                            "schema-scroll relative z-10 min-h-0 h-full w-full resize-none bg-transparent p-4 pl-4 font-mono text-[15px] font-medium leading-6 text-transparent caret-slate-900 outline-none dark:caret-slate-100",
-                            hasErrors ? "selection:bg-red-500/30" : "selection:bg-blue-500/30"
-                        ].join(" ")}
-                    />
-                </div>
+            <div className="min-h-0 flex-1 bg-white dark:bg-slate-950">
+                <div ref={containerRef} className="schema-codemirror h-full" />
             </div>
 
             <div className="border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
@@ -282,9 +349,9 @@ const SqlEditor = forwardRef(function SqlEditor(
                                 key={`${error.line}-${error.column}-${index}`}
                                 type="button"
                                 onClick={() => {
-                                    const textarea = textareaRef.current;
+                                    const editor = editorApiRef.current;
 
-                                    if (!textarea) {
+                                    if (!editor) {
                                         return;
                                     }
 
@@ -298,13 +365,9 @@ const SqlEditor = forwardRef(function SqlEditor(
                                         (error.line > 1 ? 1 : 0) +
                                         Math.max(0, error.column - 1);
 
-                                    textarea.focus();
-                                    textarea.setSelectionRange(start, start);
-                                    textarea.scrollTop = Math.max(0, (error.line - 1) * 24 - 80);
-
-                                    if (lineNumbersRef.current) {
-                                        lineNumbersRef.current.scrollTop = textarea.scrollTop;
-                                    }
+                                    editor.focus();
+                                    editor.setSelectionRange(start, start);
+                                    editor.scrollTop = Math.max(0, (error.line - 1) * 24 - 80);
                                 }}
                                 className="block w-full rounded-2xl border border-red-200 bg-red-50 p-3 text-left transition hover:bg-red-100 dark:border-red-500/20 dark:bg-red-500/10 dark:hover:bg-red-500/15"
                             >

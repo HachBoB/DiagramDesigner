@@ -11,8 +11,12 @@ import {
     Sparkles
 } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
+import ProfileButton from "../components/ProfileButton.jsx";
+import { isAuthenticated } from "../lib/api.js";
 
 export default function LandingPage({ theme, onToggleTheme }) {
+    const hasSession = isAuthenticated();
+
     return (
         <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white">
             <header className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-6">
@@ -38,19 +42,25 @@ export default function LandingPage({ theme, onToggleTheme }) {
 
                     <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
-                    <Link
-                        to="/login"
-                        className="rounded-xl px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
-                    >
-                        Войти
-                    </Link>
+                    {hasSession ? (
+                        <ProfileButton />
+                    ) : (
+                        <>
+                            <Link
+                                to="/login"
+                                className="rounded-xl px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                            >
+                                Войти
+                            </Link>
 
-                    <Link
-                        to="/register"
-                        className="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
-                    >
-                        Регистрация
-                    </Link>
+                            <Link
+                                to="/register"
+                                className="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
+                            >
+                                Регистрация
+                            </Link>
+                        </>
+                    )}
                 </nav>
             </header>
 

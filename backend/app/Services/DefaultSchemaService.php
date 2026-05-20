@@ -23,6 +23,14 @@ class DefaultSchemaService
                         [3, 'candice@example.com', 'Candice'],
                     ],
                 ],
+                'indexes' => [
+                    [
+                        'id' => 'idx-users-email',
+                        'name' => 'idx_users_email',
+                        'columns' => ['email'],
+                        'unique' => true,
+                    ],
+                ],
             ],
             'orders' => [
                 'position' => ['x' => 780, 'y' => 120],
@@ -37,6 +45,20 @@ class DefaultSchemaService
                     'rows' => [
                         [101, 1, 'paid'],
                         [102, 2, 'pending'],
+                    ],
+                ],
+                'indexes' => [
+                    [
+                        'id' => 'idx-orders-user-id',
+                        'name' => 'idx_orders_user_id',
+                        'columns' => ['user_id'],
+                        'unique' => false,
+                    ],
+                    [
+                        'id' => 'idx-orders-status-created',
+                        'name' => 'idx_orders_status_created',
+                        'columns' => ['status', 'created_at'],
+                        'unique' => false,
                     ],
                 ],
             ],
@@ -55,6 +77,14 @@ class DefaultSchemaService
                         [202, 'Mouse', 39.99, 28],
                     ],
                 ],
+                'indexes' => [
+                    [
+                        'id' => 'idx-products-title',
+                        'name' => 'idx_products_title',
+                        'columns' => ['title'],
+                        'unique' => false,
+                    ],
+                ],
             ],
             'order_items' => [
                 'position' => ['x' => 780, 'y' => 420],
@@ -69,6 +99,14 @@ class DefaultSchemaService
                     'rows' => [
                         [301, 101, 201, 1],
                         [302, 102, 202, 2],
+                    ],
+                ],
+                'indexes' => [
+                    [
+                        'id' => 'idx-order-items-order-product',
+                        'name' => 'idx_order_items_order_product',
+                        'columns' => ['order_id', 'product_id'],
+                        'unique' => false,
                     ],
                 ],
             ],
@@ -87,6 +125,7 @@ class DefaultSchemaService
                         'columns' => [],
                         'rows' => [],
                     ],
+                    'indexes' => $table['indexes'] ?? [],
                 ],
             ], array_keys($tables), $tables),
             'edges' => [
@@ -105,6 +144,10 @@ Table users {
   email VARCHAR [unique, not null]
   name VARCHAR [not null]
   created_at TIMESTAMP [not null]
+
+  Indexes {
+    idx_users_email email [unique]
+  }
 }
 
 Table orders {
@@ -112,6 +155,11 @@ Table orders {
   user_id INTEGER [fk, not null]
   status VARCHAR [not null]
   created_at TIMESTAMP [not null]
+
+  Indexes {
+    idx_orders_user_id user_id
+    idx_orders_status_created (status, created_at)
+  }
 }
 
 Table products {
@@ -119,6 +167,10 @@ Table products {
   title VARCHAR [not null]
   price DECIMAL [not null]
   stock INTEGER [not null]
+
+  Indexes {
+    idx_products_title title
+  }
 }
 
 Table order_items {
@@ -126,6 +178,10 @@ Table order_items {
   order_id INTEGER [fk, not null]
   product_id INTEGER [fk, not null]
   quantity INTEGER [not null]
+
+  Indexes {
+    idx_order_items_order_product (order_id, product_id)
+  }
 }
 
 Ref one-to-many: users.id > orders.user_id

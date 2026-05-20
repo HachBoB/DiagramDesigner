@@ -16,6 +16,7 @@ Route::patch('/shared-projects/{token}', [SharedProjectController::class, 'updat
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::patch('/me', [AuthController::class, 'update']);
 
     Route::apiResource('projects', ProjectController::class);
     Route::post('/projects/{project}/duplicate', [ProjectController::class, 'duplicate']);
@@ -23,6 +24,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::patch('/projects/{project}/last-opened', [ProjectController::class, 'lastOpened']);
     Route::get('/projects/{project}/share', [ProjectShareController::class, 'show']);
     Route::patch('/projects/{project}/share', [ProjectShareController::class, 'update']);
+    Route::delete('/projects/{project}/leave', [ProjectShareController::class, 'leave']);
+    Route::patch('/projects/{project}/team/{viewer}', [ProjectShareController::class, 'updateViewerPermission']);
+    Route::delete('/projects/{project}/team/{viewer}', [ProjectShareController::class, 'removeViewer']);
 
     Route::post('/ai/schema-assistant', AiSchemaAssistantController::class);
 });

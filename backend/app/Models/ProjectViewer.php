@@ -13,6 +13,7 @@ class ProjectViewer extends Model
         'viewer_key',
         'name',
         'email',
+        'permission',
         'last_viewed_at',
     ];
 

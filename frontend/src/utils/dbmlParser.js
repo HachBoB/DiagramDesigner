@@ -78,6 +78,23 @@ function getExistingFieldId(existingNodes, tableName, fieldName) {
     return existingField?.id || crypto.randomUUID();
 }
 
+function getExistingIndexId(existingNodes, tableName, indexName, columns) {
+    const existingNode = existingNodes.find((node) => {
+        return node.data?.name === tableName;
+    });
+
+    const normalizedColumns = columns.join(",");
+    const existingIndex = existingNode?.data?.indexes?.find((item) => {
+        if (indexName && item.name === indexName) {
+            return true;
+        }
+
+        return Array.isArray(item.columns) && item.columns.join(",") === normalizedColumns;
+    });
+
+    return existingIndex?.id || crypto.randomUUID();
+}
+
 function parseFieldLine(line, lineNumber, tableName, existingNodes) {
     const errors = [];
 
@@ -182,6 +199,129 @@ function parseFieldLine(line, lineNumber, tableName, existingNodes) {
         },
         errors
     };
+}
+
+function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes) {
+    const errors = [];
+
+    if (line.includes("[") && !line.includes("]")) {
+        return {
+            index: null,
+            errors: [
+                createParserError(
+                    lineNumber,
+                    line.indexOf("[") + 1,
+                    'Missing closing bracket "]"',
+                    "Закрой список настроек индекса. Например: email [unique]"
+                )
+            ]
+        };
+    }
+
+    let indexPart = line;
+    let rawFlags = "";
+    const flagsStart = line.indexOf("[");
+
+    if (flagsStart !== -1) {
+        const flagsEnd = line.lastIndexOf("]");
+        indexPart = line.slice(0, flagsStart).trim();
+        rawFlags = line.slice(flagsStart + 1, flagsEnd).trim();
+    }
+
+    const flags = rawFlags
+        .split(",")
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+
+    flags.forEach((flag) => {
+        if (flag !== "unique") {
+            errors.push(
+                createParserError(
+                    lineNumber,
+                    1,
+                    `Unknown index option "${flag}"`,
+                    'Для индексов пока доступен только флаг "unique".'
+                )
+            );
+        }
+    });
+
+    let name = "";
+    let rawColumns = indexPart;
+    const namedCompositeMatch = indexPart.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+\(([^)]*)\)$/);
+    const compositeMatch = indexPart.match(/^\(([^)]*)\)$/);
+    const namedSingleMatch = indexPart.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)$/);
+
+    if (namedCompositeMatch) {
+        name = namedCompositeMatch[1];
+        rawColumns = namedCompositeMatch[2];
+    } else if (compositeMatch) {
+        rawColumns = compositeMatch[1];
+    } else if (namedSingleMatch) {
+        name = namedSingleMatch[1];
+        rawColumns = namedSingleMatch[2];
+    }
+
+    const columns = rawColumns
+        .split(",")
+        .map((column) => column.trim())
+        .filter(Boolean);
+
+    if (columns.length === 0) {
+        errors.push(
+            createParserError(
+                lineNumber,
+                1,
+                "Index must include at least one column",
+                "Пример: email [unique] или (user_id, status)"
+            )
+        );
+    }
+
+    columns.forEach((column) => {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column)) {
+            errors.push(
+                createParserError(
+                    lineNumber,
+                    1,
+                    `Invalid index column "${column}"`,
+                    "Колонки индекса должны совпадать с названиями полей таблицы."
+                )
+            );
+        }
+    });
+
+    return {
+        index: columns.length > 0
+            ? {
+                id: getExistingIndexId(existingNodes, tableName, name, columns),
+                name: name || `idx_${tableName}_${columns.join("_") || indexNumber}`,
+                columns,
+                unique: flags.includes("unique")
+            }
+            : null,
+        errors
+    };
+}
+
+function stripInlineComment(value) {
+    const line = String(value || "");
+    let quote = null;
+
+    for (let index = 0; index < line.length - 1; index += 1) {
+        const char = line[index];
+        const nextChar = line[index + 1];
+
+        if ((char === "'" || char === "\"") && line[index - 1] !== "\\") {
+            quote = quote === char ? null : quote || char;
+        }
+
+        if (!quote && char === "/" && nextChar === "/") {
+            return line.slice(0, index);
+        }
+    }
+
+    return line;
 }
 
 function parseRefLine(line, lineNumber) {
@@ -407,7 +547,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
     while (index < lines.length) {
         const rawLine = lines[index];
-        const line = rawLine.trim();
+        const line = stripInlineComment(rawLine).trim();
         const lineNumber = index + 1;
 
         if (!line || line.startsWith("//")) {
@@ -434,6 +574,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
             const tableName = tableMatch[1];
             const fields = [];
+            const indexes = [];
             const usedFieldNames = new Set();
             const tableStartLine = lineNumber;
 
@@ -443,7 +584,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
             while (index < lines.length) {
                 const fieldRawLine = lines[index];
-                const fieldLine = fieldRawLine.trim();
+                const fieldLine = stripInlineComment(fieldRawLine).trim();
                 const fieldLineNumber = index + 1;
 
                 if (!fieldLine || fieldLine.startsWith("//")) {
@@ -455,6 +596,62 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                     closed = true;
                     index += 1;
                     break;
+                }
+
+                if (/^Indexes\s*\{\s*$/i.test(fieldLine)) {
+                    index += 1;
+                    let indexesClosed = false;
+
+                    while (index < lines.length) {
+                        const indexRawLine = lines[index];
+                        const indexLine = stripInlineComment(indexRawLine).trim();
+                        const indexLineNumber = index + 1;
+
+                        if (!indexLine || indexLine.startsWith("//")) {
+                            index += 1;
+                            continue;
+                        }
+
+                        if (indexLine === "}") {
+                            indexesClosed = true;
+                            index += 1;
+                            break;
+                        }
+
+                        if (indexLine.startsWith("Table") || indexLine.startsWith("Ref") || indexLine.startsWith("Records")) {
+                            errors.push(
+                                createParserError(
+                                    indexLineNumber,
+                                    1,
+                                    `Unexpected declaration inside Indexes "${tableName}"`,
+                                    `Закрой блок Indexes таблицы "${tableName}" символом }, а затем объявляй следующую сущность.`
+                                )
+                            );
+                            break;
+                        }
+
+                        const parsedIndex = parseIndexLine(indexLine, indexLineNumber, tableName, indexes.length + 1, existingNodes);
+                        errors.push(...parsedIndex.errors);
+
+                        if (parsedIndex.index) {
+                            indexes.push(parsedIndex.index);
+                        }
+
+                        index += 1;
+                    }
+
+                    if (!indexesClosed) {
+                        errors.push(
+                            createParserError(
+                                lines.length,
+                                Math.max(1, lines[lines.length - 1]?.length || 1),
+                                `Missing closing brace "}" for indexes "${tableName}"`,
+                                `Блок Indexes таблицы "${tableName}" должен закрываться символом }.`
+                            )
+                        );
+                    }
+
+                    continue;
                 }
 
                 if (fieldLine.startsWith("Table")) {
@@ -539,7 +736,8 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             tables.push({
                 id: getExistingTableId(existingNodes, tableName),
                 name: tableName,
-                fields
+                fields,
+                indexes
             });
 
             continue;
@@ -576,7 +774,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
             while (index < lines.length) {
                 const rowRawLine = lines[index];
-                const rowLine = rowRawLine.trim();
+                const rowLine = stripInlineComment(rowRawLine).trim();
                 const rowLineNumber = index + 1;
 
                 if (!rowLine || rowLine.startsWith("//")) {
@@ -685,6 +883,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 tableId: table.id,
                 name: table.name,
                 fields: table.fields,
+                indexes: table.indexes,
                 records: records
                     ? {
                         columns: records.columns,
@@ -726,6 +925,25 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                     )
                 );
             }
+        });
+    });
+
+    tables.forEach((table) => {
+        table.indexes.forEach((indexItem) => {
+            indexItem.columns.forEach((column) => {
+                const fieldExists = table.fields.some((field) => field.name === column);
+
+                if (!fieldExists) {
+                    errors.push(
+                        createParserError(
+                            1,
+                            1,
+                            `Unknown field "${table.name}.${column}" in Indexes`,
+                            "Колонки в Indexes должны совпадать с полями этой таблицы."
+                        )
+                    );
+                }
+            });
         });
     });
 

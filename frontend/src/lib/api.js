@@ -6,6 +6,26 @@ function createApiError(message, status, details = {}) {
     return Object.assign(new Error(message), { status, details });
 }
 
+export function getApiErrorDetails(error) {
+    const details = error?.details?.error;
+
+    if (!details || typeof details !== "object") {
+        return "";
+    }
+
+    const lines = [];
+
+    if (details.provider) lines.push(`Провайдер: ${details.provider}`);
+    if (details.model) lines.push(`Модель: ${details.model}`);
+    if (details.type) lines.push(`Тип ошибки: ${details.type}`);
+    if (details.reason) lines.push(`Причина: ${details.reason}`);
+    if (details.previous?.reason) lines.push(`Нижеуровневая ошибка: ${details.previous.reason}`);
+    if (details.base_url) lines.push(`Endpoint: ${details.base_url}`);
+    if (details.file && details.line) lines.push(`Файл: ${details.file}:${details.line}`);
+
+    return lines.join("\n");
+}
+
 export function getAuthToken() {
     return localStorage.getItem(TOKEN_KEY);
 }
@@ -134,6 +154,17 @@ export async function fetchSession(signal) {
     return payload.data;
 }
 
+export async function updateProfile(data) {
+    const payload = await request("/api/me", {
+        method: "PATCH",
+        body: data
+    });
+
+    setAuthSession({ user: payload.data });
+
+    return payload.data;
+}
+
 export async function listProjects(signal) {
     const payload = await request("/api/projects", { signal });
 
@@ -164,6 +195,29 @@ export async function deleteProject(projectId) {
     });
 
     return payload.message;
+}
+
+export async function leaveProject(projectId) {
+    const payload = await request(`/api/projects/${projectId}/leave`, {
+        method: "DELETE"
+    });
+
+    return payload.message;
+}
+
+export async function removeProjectViewer(projectId, viewerId) {
+    const payload = await request(`/api/projects/${projectId}/team/${viewerId}`, {
+        method: "DELETE"
+    });
+
+    return payload.message;
+}
+
+export async function updateProjectViewerPermission(projectId, viewerId, permission) {
+    return request(`/api/projects/${projectId}/team/${viewerId}`, {
+        method: "PATCH",
+        body: { permission }
+    });
 }
 
 export async function duplicateProject(projectId) {
@@ -198,7 +252,7 @@ export async function updateProjectShare(projectId, data) {
 
 export async function getSharedProject(token, signal) {
     return request(`/api/shared-projects/${token}`, {
-        auth: false,
+        auth: true,
         signal
     });
 }
@@ -206,7 +260,7 @@ export async function getSharedProject(token, signal) {
 export async function unlockSharedProject(token, password) {
     return request(`/api/shared-projects/${token}/unlock`, {
         method: "POST",
-        auth: false,
+        auth: true,
         body: { password }
     });
 }
@@ -214,7 +268,7 @@ export async function unlockSharedProject(token, password) {
 export async function updateSharedProject(token, project, password = "") {
     return request(`/api/shared-projects/${token}`, {
         method: "PATCH",
-        auth: false,
+        auth: true,
         body: password ? { ...project, password } : project
     });
 }

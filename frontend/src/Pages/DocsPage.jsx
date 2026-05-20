@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowLeft, BookOpen } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
+import ProfileButton from "../components/ProfileButton.jsx";
 
 export default function DocsPage({ theme, onToggleTheme }) {
     return (
@@ -14,6 +15,7 @@ export default function DocsPage({ theme, onToggleTheme }) {
 
                     <div className="flex items-center gap-2">
                         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+                        <ProfileButton />
 
                         <Link to="/editor" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                             Открыть редактор

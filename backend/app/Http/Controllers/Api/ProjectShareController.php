@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Project\ShareProjectRequest;
 use App\Http\Resources\ProjectShareResource;
 use App\Models\Project;
+use App\Models\ProjectViewer;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -59,6 +61,50 @@ class ProjectShareController extends Controller
         }
 
         $project->save();
+
+        return ProjectShareResource::make($project->refresh()->load(['user', 'viewers']));
+    }
+
+    public function leave(Request $request, Project $project): JsonResponse
+    {
+        abort_unless($project->user_id !== $request->user()->id, 403);
+
+        $deleted = $project->viewers()
+            ->where('user_id', $request->user()->id)
+            ->delete();
+
+        abort_unless($deleted > 0, 404);
+
+        return response()->json([
+            'message' => 'Вы вышли из командного проекта.',
+        ]);
+    }
+
+    public function removeViewer(Request $request, Project $project, ProjectViewer $viewer): JsonResponse
+    {
+        $this->ensureOwnsProject($request, $project);
+        abort_unless($viewer->project_id === $project->id, 404);
+
+        $viewer->delete();
+
+        return response()->json([
+            'message' => 'Участник удалён из проекта.',
+        ]);
+    }
+
+    public function updateViewerPermission(Request $request, Project $project, ProjectViewer $viewer): ProjectShareResource
+    {
+        $this->ensureOwnsProject($request, $project);
+        abort_unless($viewer->project_id === $project->id, 404);
+        abort_unless($viewer->user_id !== null, 422, 'Права можно менять только пользователям с аккаунтом.');
+
+        $data = $request->validate([
+            'permission' => ['required', 'string', 'in:view,edit'],
+        ]);
+
+        $viewer->update([
+            'permission' => $data['permission'],
+        ]);
 
         return ProjectShareResource::make($project->refresh()->load(['user', 'viewers']));
     }

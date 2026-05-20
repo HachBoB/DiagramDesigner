@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Bot, Check, Loader2, Send, Sparkles, Wand2, X } from "lucide-react";
 import {
     askSchemaAssistant,
+    getApiErrorDetails,
     getApiErrorMessage,
     isAuthenticated
 } from "../lib/api.js";
@@ -28,6 +29,7 @@ export default function AiAssistantPanel({
     const [isApplied, setIsApplied] = useState(false);
     const [status, setStatus] = useState("idle");
     const [error, setError] = useState("");
+    const [errorDetails, setErrorDetails] = useState("");
 
     if (!open) {
         return null;
@@ -41,6 +43,7 @@ export default function AiAssistantPanel({
 
         setStatus("loading");
         setError("");
+        setErrorDetails("");
         setIsApplied(false);
 
         try {
@@ -59,6 +62,7 @@ export default function AiAssistantPanel({
             setStatus("ready");
         } catch (requestError) {
             setError(getApiErrorMessage(requestError, "AI-помощник сейчас недоступен."));
+            setErrorDetails(getApiErrorDetails(requestError));
             setStatus("idle");
         }
     }
@@ -156,7 +160,12 @@ export default function AiAssistantPanel({
 
                 {error && (
                     <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-                        {error}
+                        <div>{error}</div>
+                        {errorDetails && (
+                            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl border border-red-200 bg-white p-3 text-xs font-medium leading-5 text-red-800 dark:border-red-900 dark:bg-slate-950 dark:text-red-200">
+                                {errorDetails}
+                            </pre>
+                        )}
                     </div>
                 )}
 

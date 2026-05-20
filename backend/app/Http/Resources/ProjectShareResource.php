@@ -31,6 +31,7 @@ class ProjectShareResource extends JsonResource
                     'user_id' => $viewer->user_id,
                     'name' => $viewer->name ?: 'Гость',
                     'email' => $viewer->email,
+                    'permission' => $viewer->permission ?? 'view',
                     'is_guest' => $viewer->user_id === null,
                     'last_viewed_at' => $viewer->last_viewed_at?->toJSON(),
                 ])

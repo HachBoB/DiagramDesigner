@@ -12,6 +12,19 @@ export function createField(name = "field", type = "INTEGER") {
     };
 }
 
+export function createIndex(columns = []) {
+    const normalizedColumns = Array.isArray(columns)
+        ? columns.filter(Boolean)
+        : [];
+
+    return {
+        id: crypto.randomUUID(),
+        name: "",
+        columns: normalizedColumns,
+        unique: false
+    };
+}
+
 export function createTableNode(index = 1, position = { x: 200, y: 120 }) {
     const tableId = crypto.randomUUID();
 
@@ -33,7 +46,8 @@ export function createTableNode(index = 1, position = { x: 200, y: 120 }) {
             records: {
                 columns: [],
                 rows: []
-            }
+            },
+            indexes: []
         }
     };
 }
@@ -128,7 +142,15 @@ export function createStarterSchema() {
                         [2, "bob@example.com", "Bob"],
                         [3, "candice@example.com", "Candice"]
                     ]
-                }
+                },
+                indexes: [
+                    {
+                        id: crypto.randomUUID(),
+                        name: "idx_users_email",
+                        columns: ["email"],
+                        unique: true
+                    }
+                ]
             }
         },
         {
@@ -145,7 +167,21 @@ export function createStarterSchema() {
                         [101, 1, "paid"],
                         [102, 2, "pending"]
                     ]
-                }
+                },
+                indexes: [
+                    {
+                        id: crypto.randomUUID(),
+                        name: "idx_orders_user_id",
+                        columns: ["user_id"],
+                        unique: false
+                    },
+                    {
+                        id: crypto.randomUUID(),
+                        name: "idx_orders_status",
+                        columns: ["status"],
+                        unique: false
+                    }
+                ]
             }
         },
         {
@@ -162,7 +198,15 @@ export function createStarterSchema() {
                         [201, "Keyboard", 89.99, 14],
                         [202, "Mouse", 39.99, 28]
                     ]
-                }
+                },
+                indexes: [
+                    {
+                        id: crypto.randomUUID(),
+                        name: "idx_products_title",
+                        columns: ["title"],
+                        unique: false
+                    }
+                ]
             }
         },
         {
@@ -179,7 +223,15 @@ export function createStarterSchema() {
                         [301, 101, 201, 1],
                         [302, 102, 202, 2]
                     ]
-                }
+                },
+                indexes: [
+                    {
+                        id: crypto.randomUUID(),
+                        name: "idx_order_items_order_product",
+                        columns: ["order_id", "product_id"],
+                        unique: false
+                    }
+                ]
             }
         }
     ];

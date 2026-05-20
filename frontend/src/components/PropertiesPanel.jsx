@@ -1,6 +1,6 @@
-import { Plus, Settings2, Trash2, GitBranch } from "lucide-react";
+import { Plus, Settings2, Trash2, GitBranch, Gauge } from "lucide-react";
 import { DB_DIALECTS, RELATION_TYPES } from "../types/databaseTypes.js";
-import { createField } from "../utils/schemaFactory.js";
+import { createField, createIndex } from "../utils/schemaFactory.js";
 
 export default function PropertiesPanel({
                                             selectedTable,
@@ -85,6 +85,93 @@ export default function PropertiesPanel({
                 ...selectedTable.data,
                 fields
             }
+        });
+    }
+
+    function updateIndexes(indexes) {
+        onUpdateTable({
+            ...selectedTable,
+            data: {
+                ...selectedTable.data,
+                indexes
+            }
+        });
+    }
+
+    function addIndex() {
+        const firstField = selectedTable.data.fields.find((field) => !field.pk)
+            || selectedTable.data.fields[0];
+        const indexes = [
+            ...(selectedTable.data.indexes || []),
+            {
+                ...createIndex(firstField ? [firstField.name] : []),
+                name: firstField ? `idx_${selectedTable.data.name}_${firstField.name}` : ""
+            }
+        ];
+
+        updateIndexes(indexes);
+    }
+
+    function updateIndex(indexId, patch) {
+        const indexes = (selectedTable.data.indexes || []).map((indexItem) => {
+            if (indexItem.id !== indexId) {
+                return indexItem;
+            }
+
+            return {
+                ...indexItem,
+                ...patch
+            };
+        });
+
+        updateIndexes(indexes);
+    }
+
+    function deleteIndex(indexId) {
+        updateIndexes((selectedTable.data.indexes || []).filter((indexItem) => indexItem.id !== indexId));
+    }
+
+    function buildIndexName(columns) {
+        const normalizedColumns = Array.isArray(columns)
+            ? columns.filter(Boolean)
+            : [];
+
+        return `idx_${selectedTable.data.name}_${normalizedColumns.join("_") || "fields"}`;
+    }
+
+    function getIndexNamePatch(indexItem, nextColumns) {
+        const currentColumns = Array.isArray(indexItem.columns) ? indexItem.columns : [];
+        const currentAutoName = buildIndexName(currentColumns);
+        const hasManualName = Boolean(indexItem.name) && indexItem.name !== currentAutoName;
+
+        return hasManualName
+            ? {}
+            : { name: buildIndexName(nextColumns) };
+    }
+
+    function addIndexColumn(indexItem, columnName) {
+        if (!columnName) {
+            return;
+        }
+
+        const columns = Array.isArray(indexItem.columns) ? indexItem.columns : [];
+
+        if (columns.includes(columnName)) {
+            return;
+        }
+
+        updateIndex(indexItem.id, {
+            columns: [...columns, columnName],
+            ...getIndexNamePatch(indexItem, [...columns, columnName])
+        });
+    }
+
+    function removeIndexColumn(indexItem, columnName) {
+        const nextColumns = (indexItem.columns || []).filter((item) => item !== columnName);
+
+        updateIndex(indexItem.id, {
+            columns: nextColumns,
+            ...getIndexNamePatch(indexItem, nextColumns)
         });
     }
 
@@ -194,6 +281,124 @@ export default function PropertiesPanel({
                                 </label>
                             ))}
                         </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-7 mb-3 flex items-center justify-between">
+                <div>
+                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                        Индексы
+                    </h3>
+
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Ускоряют поиск и могут быть уникальными.
+                    </p>
+                </div>
+
+                <button
+                    onClick={addIndex}
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
+                >
+                    <Plus size={16} />
+                    Индекс
+                </button>
+            </div>
+
+            <div className="space-y-3">
+                {(selectedTable.data.indexes || []).length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        Индексов пока нет. Можно добавить индекс на одно поле или составной индекс через запятую.
+                    </div>
+                )}
+
+                {(selectedTable.data.indexes || []).map((indexItem) => (
+                    <div
+                        key={indexItem.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                        <div className="mb-2 flex items-center gap-2">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+                                <Gauge size={16} />
+                            </div>
+
+                            <input
+                                value={indexItem.name || ""}
+                                onChange={(event) => updateIndex(indexItem.id, { name: event.target.value })}
+                                placeholder={`idx_${selectedTable.data.name}`}
+                                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                            />
+
+                            <button
+                                onClick={() => deleteIndex(indexItem.id)}
+                                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-red-950 dark:hover:text-red-400"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+
+                        <div className="mb-3">
+                            <select
+                                value=""
+                                onChange={(event) => {
+                                    addIndexColumn(indexItem, event.target.value);
+                                    event.target.value = "";
+                                }}
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                            >
+                                <option value="">Выбрать поле для индекса</option>
+                                {selectedTable.data.fields
+                                    .filter((field) => !(indexItem.columns || []).includes(field.name))
+                                    .map((field) => (
+                                        <option key={field.id} value={field.name}>
+                                            {field.name} - {field.type}
+                                        </option>
+                                    ))}
+                            </select>
+
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {(indexItem.columns || []).length === 0 && (
+                                    <div className="rounded-xl border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                        Поля не выбраны
+                                    </div>
+                                )}
+
+                                {(indexItem.columns || []).map((column) => (
+                                    <button
+                                        key={column}
+                                        type="button"
+                                        onClick={() => removeIndexColumn(indexItem, column)}
+                                        className="inline-flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-200 dark:hover:bg-blue-900"
+                                        title="Убрать поле из индекса"
+                                    >
+                                        {column}
+                                        <span className="text-blue-400">x</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <input
+                            value={(indexItem.columns || []).join(", ")}
+                            onChange={(event) => updateIndex(indexItem.id, {
+                                columns: event.target.value
+                                    .split(",")
+                                    .map((column) => column.trim())
+                                    .filter(Boolean)
+                            })}
+                            placeholder="email или user_id, status"
+                            className="hidden"
+                        />
+
+                        <label className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm text-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(indexItem.unique)}
+                                onChange={(event) => updateIndex(indexItem.id, { unique: event.target.checked })}
+                                className="rounded border-slate-300 text-blue-600"
+                            />
+                            Unique index
+                        </label>
                     </div>
                 ))}
             </div>
