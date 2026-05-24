@@ -3,6 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { Database } from "lucide-react";
 import { getApiErrorMessage, register } from "../lib/api.js";
 
+/**
+ * Регистрация работает так же, как вход: API возвращает пользователя и токен,
+ * поэтому после submit можно сразу открыть страницу проектов.
+ */
 export default function RegisterPage() {
     const navigate = useNavigate();
     const [form, setForm] = useState({
@@ -14,6 +18,7 @@ export default function RegisterPage() {
     const [error, setError] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Ошибки валидации Laravel переводятся api-слоем в читаемое сообщение.
     async function handleSubmit(event) {
         event.preventDefault();
         setError("");
@@ -29,6 +34,8 @@ export default function RegisterPage() {
         }
     }
 
+    // Controlled form хранит все поля одним объектом, чтобы payload совпал
+    // с Laravel RegisterRequest, включая password_confirmation.
     function updateField(field, value) {
         setForm((currentForm) => ({
             ...currentForm,

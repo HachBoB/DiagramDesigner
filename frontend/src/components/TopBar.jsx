@@ -1,13 +1,18 @@
 import { Link } from "react-router-dom";
-import { Bot, CheckCircle2, Cloud, CloudOff, Database, FileJson, FileText, Home, Loader2, RotateCcw, Share2 } from "lucide-react";
+import { Bot, CheckCircle2, Cloud, CloudOff, Database, FileJson, FileText, FileUp, Home, Loader2, RotateCcw, Share2 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle.jsx";
 import ProfileButton from "./ProfileButton.jsx";
 
+/**
+ * Верхняя панель редактора собирает команды проекта в одном месте:
+ * имя, импорт, экспорт, AI, шаринг и индикатор сохранения.
+ */
 export default function TopBar({
                                    projectName,
                                    onProjectNameChange,
                                    onExportJson,
                                    onExportSql,
+                                   onImportSql,
                                    onOpenAiAssistant,
                                    onShare,
                                    onReset,
@@ -91,6 +96,16 @@ export default function TopBar({
                     Экспорт JSON
                 </button>
 
+                {onImportSql && (
+                    <button
+                        onClick={onImportSql}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        <FileUp size={16} />
+                        Импорт SQL
+                    </button>
+                )}
+
                 <button
                     onClick={onExportSql}
                     className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
@@ -103,6 +118,10 @@ export default function TopBar({
     );
 }
 
+/**
+ * Индикатор разделяет локальный режим, загрузку remote-проекта, автосохранение
+ * и сетевую ошибку, чтобы editor не смешивал эти состояния в своей разметке.
+ */
 function SaveIndicator({ saveStatus, remoteStatus, remoteError }) {
     if (remoteStatus === "local") {
         return (

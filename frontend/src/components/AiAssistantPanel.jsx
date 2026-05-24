@@ -13,6 +13,10 @@ const QUICK_PROMPTS = [
     "Найди слабые места схемы"
 ];
 
+/**
+ * Боковое окно AI получает ту же схему, SQL и диалект, которые сейчас видит
+ * пользователь. Ответ может быть обычным разбором или новой версией schema code.
+ */
 export default function AiAssistantPanel({
                                             open,
                                             onClose,
@@ -35,6 +39,10 @@ export default function AiAssistantPanel({
         return null;
     }
 
+    /**
+     * Собираем единый запрос к backend AI endpoint. Режим `review` ожидает
+     * советы текстом, а `edit` просит вернуть код, который можно применить.
+     */
     async function askAssistant(nextQuestion = question, mode = "review") {
         if (!isAuthenticated()) {
             setError("Войдите в аккаунт, чтобы пользоваться AI-помощником.");
@@ -67,6 +75,10 @@ export default function AiAssistantPanel({
         }
     }
 
+    /**
+     * Кнопка отправки сама решает, просит ли пользователь именно правку кода.
+     * Это дает одинаковое поведение для свободного текста и отдельной кнопки.
+     */
     function detectIntentMode(value) {
         const text = String(value || "").toLowerCase();
         const editWords = [
@@ -96,6 +108,8 @@ export default function AiAssistantPanel({
         return editWords.some((word) => text.includes(word)) ? "edit" : "review";
     }
 
+    // Предложенный код не заменяет схему автоматически: пользователь сначала
+    // видит diff-like preview и сам подтверждает применение.
     function applySchemaCode() {
         if (!proposedSchemaCode || typeof onApplySchemaCode !== "function") {
             return;

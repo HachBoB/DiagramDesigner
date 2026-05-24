@@ -3,12 +3,17 @@ import { Link, useNavigate } from "react-router-dom";
 import { Database } from "lucide-react";
 import { getApiErrorMessage, login } from "../lib/api.js";
 
+/**
+ * Форма входа не знает деталей хранения токена: после успешного API-вызова
+ * `login` сам сохраняет сессию, а страница переводит пользователя к проектам.
+ */
 export default function LoginPage() {
     const navigate = useNavigate();
     const [form, setForm] = useState({ email: "", password: "" });
     const [error, setError] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Блокируем обычную отправку формы, чтобы показать ошибку API без reload.
     async function handleSubmit(event) {
         event.preventDefault();
         setError("");
@@ -24,6 +29,7 @@ export default function LoginPage() {
         }
     }
 
+    // Один updater обслуживает оба controlled input поля формы.
     function updateField(field, value) {
         setForm((currentForm) => ({
             ...currentForm,
@@ -87,6 +93,10 @@ export default function LoginPage() {
     );
 }
 
+/**
+ * Общая оболочка формы входа отделена от submit-логики и может принимать
+ * разные поля и ссылки через `children`.
+ */
 function AuthLayout({ title, subtitle, children }) {
     return (
         <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6 dark:bg-slate-950">

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import ProfileButton from "../components/ProfileButton.jsx";
+import CreateProjectModal from "../components/CreateProjectModal.jsx";
 import {
     createProject,
     deleteProject,
@@ -34,6 +35,8 @@ import {
     updateProjectViewerPermission
 } from "../lib/api.js";
 import { DB_DIALECTS, DEFAULT_DIALECT } from "../types/databaseTypes.js";
+import { generateDBML } from "../utils/sqlGenerator.js";
+import { createEmptySchema, createStarterSchema } from "../utils/schemaFactory.js";
 
 const demoProjects = [
     {
@@ -68,6 +71,10 @@ const demoProjects = [
     }
 ];
 
+/**
+ * Страница проектов объединяет личные и командные схемы, быстрые действия
+ * по карточке и владельческие настройки состава команды.
+ */
 export default function ProjectsPage({ theme, onToggleTheme }) {
     const navigate = useNavigate();
     const hasSession = isAuthenticated();
@@ -77,13 +84,13 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
     const [status, setStatus] = useState(hasSession ? "loading" : "idle");
     const [error, setError] = useState("");
     const [isCreating, setIsCreating] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [deletingProjectId, setDeletingProjectId] = useState(null);
     const [leavingProjectId, setLeavingProjectId] = useState(null);
     const [settingsProject, setSettingsProject] = useState(null);
     const [settingsForm, setSettingsForm] = useState({
         name: "",
-        description: "",
-        dialect: DEFAULT_DIALECT
+        description: ""
     });
     const [teamInfo, setTeamInfo] = useState(null);
     const [settingsStatus, setSettingsStatus] = useState("idle");
@@ -117,6 +124,7 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         );
     }, [displayedProjects]);
 
+    // Гостю показываем demoProjects, а личный список запрашиваем только после сессии.
     useEffect(() => {
         if (!hasSession) {
             return;
@@ -143,7 +151,65 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         return () => controller.abort();
     }, [hasSession]);
 
-    async function handleCreateProject() {
+    function handleOpenCreateProjectModal() {
+        setError("");
+        setIsCreateModalOpen(true);
+    }
+
+    function handleCloseCreateProjectModal() {
+        if (isCreating) {
+            return;
+        }
+
+        setIsCreateModalOpen(false);
+    }
+
+    // Для гостя открываем локальный редактор, для аккаунта сразу создаем remote-проект.
+    async function handleCreateProject({ mode = "starter", dialect = DEFAULT_DIALECT } = {}) {
+        // Одинаковый snapshot используем и при local route, и в теле POST /projects.
+        const schema = mode === "empty" ? createEmptySchema() : createStarterSchema();
+        const schemaJson = {
+            nodes: schema.nodes,
+            edges: schema.edges,
+            notes: Array.isArray(schema.notes) ? schema.notes : []
+        };
+
+        if (!hasSession) {
+            // Без аккаунта схема будет собрана самим EditorPage из createMode/createDialect.
+            setIsCreateModalOpen(false);
+            navigate("/editor", {
+                state: {
+                    createMode: mode,
+                    createDialect: dialect
+                }
+            });
+            return;
+        }
+
+        setIsCreating(true);
+        setError("");
+
+        try {
+            // Для backend передаем и текстовую, и визуальную форму схемы.
+            const project = await createProject({
+                name: mode === "empty" ? "Пустой проект" : "Новая схема базы данных",
+                dialect,
+                schema_code: generateDBML(schemaJson.nodes, schemaJson.edges),
+                schema_json: schemaJson
+            });
+
+            setIsCreateModalOpen(false);
+            navigate(`/editor/${project.id}`);
+        } catch (requestError) {
+            setError(getApiErrorMessage(requestError, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїСЂРѕРµРєС‚."));
+        } finally {
+            setIsCreating(false);
+        }
+    }
+
+    function handleCreateProjectAction(mode = "starter") {
+        return handleCreateProject(mode);
+        /*
         if (!hasSession) {
             navigate("/editor");
             return;
@@ -163,8 +229,10 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         } finally {
             setIsCreating(false);
         }
+        */
     }
 
+    // Избранное обновляем оптимистично, чтобы карточка реагировала без ожидания сети.
     async function handleToggleFavorite(projectId, isFavorite) {
         if (!hasSession) {
             return;
@@ -249,21 +317,23 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         }
     }
 
+    // Владельцу в настройках нужна команда, а collaborator меняет только доступные свойства проекта.
     async function handleOpenSettings(project) {
         if (project.isDemo) {
             return;
         }
 
+        // Модалка сразу показывает базовые поля проекта, пока команда при необходимости догружается.
         setSettingsProject(project);
         setSettingsForm({
             name: project.name || "",
-            description: project.description || "",
-            dialect: project.dialect || DEFAULT_DIALECT
+            description: project.description || ""
         });
         setTeamInfo(null);
         setSettingsError("");
 
         if (project.access_role !== "collaborator") {
+            // Только owner может смотреть viewers и менять их permissions.
             setSettingsStatus("loading-team");
 
             try {
@@ -300,8 +370,7 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         try {
             const updatedProject = await updateProject(settingsProject.id, {
                 name: settingsForm.name.trim(),
-                description: settingsForm.description.trim() || null,
-                dialect: settingsForm.dialect
+                description: settingsForm.description.trim() || null
             });
 
             setProjects((currentProjects) =>
@@ -435,7 +504,7 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
 
                         <button
                             type="button"
-                            onClick={handleCreateProject}
+                            onClick={handleOpenCreateProjectModal}
                             disabled={isCreating}
                             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -474,7 +543,7 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
                             <div className="mt-6 flex flex-wrap gap-3">
                                 <button
                                     type="button"
-                                    onClick={handleCreateProject}
+                                    onClick={handleOpenCreateProjectModal}
                                     disabled={isCreating}
                                     className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
@@ -541,7 +610,7 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
                 </section>
 
                 <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    <CreateProjectCard onCreate={handleCreateProject} isCreating={isCreating} />
+                    <CreateProjectCard onCreate={handleOpenCreateProjectModal} isCreating={isCreating} />
 
                     {filteredProjects.map((project) => (
                         <ProjectCard
@@ -574,10 +643,20 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
                     onChangeViewerPermission={handleChangeViewerPermission}
                 />
             )}
+
+            <CreateProjectModal
+                open={isCreateModalOpen}
+                isCreating={isCreating}
+                error={error}
+                hasSession={hasSession}
+                onClose={handleCloseCreateProjectModal}
+                onCreate={handleCreateProjectAction}
+            />
         </div>
     );
 }
 
+// Короткая метрика над сеткой проектов.
 function StatCard({ label, value }) {
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/10">
@@ -587,6 +666,7 @@ function StatCard({ label, value }) {
     );
 }
 
+// Пустая карточка в сетке открывает модалку выбора стартового проекта.
 function CreateProjectCard({ onCreate, isCreating }) {
     return (
         <button
@@ -610,6 +690,10 @@ function CreateProjectCard({ onCreate, isCreating }) {
     );
 }
 
+/**
+ * Карточка проекта собирает favorite, duplicate, edit, delete и leave действия,
+ * различая владельческий проект и командный проект участника.
+ */
 function ProjectCard({
     project,
     onToggleFavorite,
@@ -743,6 +827,10 @@ function ProjectCard({
     );
 }
 
+/**
+ * Модалка редактирует метаданные проекта, а для владельца еще показывает
+ * участников команды и позволяет менять их права.
+ */
 function ProjectSettingsModal({
     project,
     form,
@@ -823,17 +911,12 @@ function ProjectSettingsModal({
                         <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
                             База данных
                         </span>
-                        <select
-                            value={form.dialect}
-                            onChange={(event) => onChange((current) => ({ ...current, dialect: event.target.value }))}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
-                        >
-                            {Object.entries(DB_DIALECTS).map(([key, item]) => (
-                                <option key={key} value={key}>
-                                    {item.label}
-                                </option>
-                            ))}
-                        </select>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100">
+                            {DB_DIALECTS[project.dialect || DEFAULT_DIALECT]?.label || project.dialect || DEFAULT_DIALECT}
+                        </div>
+                        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            Диалект можно выбрать только при создании проекта.
+                        </p>
                     </label>
 
                     <div className="flex flex-wrap justify-end gap-3 pt-2">
@@ -930,6 +1013,7 @@ function ProjectSettingsModal({
     );
 }
 
+// Маленькая строка метаданных держит карточку проекта читаемой.
 function MiniInfo({ icon, label, value }) {
     return (
         <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-950">
@@ -945,6 +1029,7 @@ function MiniInfo({ icon, label, value }) {
     );
 }
 
+// Пустую дату показываем как отсутствие открытия, а не как Invalid Date.
 function formatDate(value) {
     if (!value) {
         return "никогда";

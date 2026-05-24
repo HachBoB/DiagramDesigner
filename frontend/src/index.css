@@ -306,11 +306,6 @@ samp {
   overflow: hidden;
 }
 
-.react-flow__minimap {
-  border-radius: 16px;
-  overflow: hidden;
-}
-
 .dark .react-flow__controls {
   background: #0f172a;
   border: 1px solid #334155;
@@ -320,11 +315,6 @@ samp {
   background: #0f172a;
   color: #e2e8f0;
   border-bottom: 1px solid #334155;
-}
-
-.dark .react-flow__minimap {
-  background: #0f172a;
-  border: 1px solid #334155;
 }
 
 .dark .react-flow__attribution {

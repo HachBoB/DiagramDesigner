@@ -3,15 +3,16 @@ import { Link, useParams } from "react-router-dom";
 import ReactFlow, {
     Background,
     Controls,
-    MiniMap,
     ReactFlowProvider,
     addEdge,
+    applyNodeChanges,
     useEdgesState,
     useNodesState
 } from "reactflow";
-import { CheckCircle2, CloudOff, Database, Eye, FileJson, FileText, Loader2, Lock, RotateCcw, Unlock } from "lucide-react";
+import { CheckCircle2, CloudOff, Database, Eye, FileJson, FileText, FileUp, Loader2, Lock, RotateCcw, Unlock } from "lucide-react";
 
 import TableNode from "../nodes/TableNode.jsx";
+import StickyNoteNode from "../nodes/StickyNoteNode.jsx";
 import RecordsModal from "../components/RecordsModal.jsx";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import ProfileButton from "../components/ProfileButton.jsx";
@@ -19,10 +20,19 @@ import Sidebar from "../components/Sidebar.jsx";
 import SqlEditor from "../components/SqlEditor.jsx";
 import PropertiesPanel from "../components/PropertiesPanel.jsx";
 import ExportModal from "../components/ExportModal.jsx";
+import ImportSqlModal from "../components/ImportSqlModal.jsx";
+import CanvasToolbar from "../components/CanvasToolbar.jsx";
 import { DEFAULT_DIALECT } from "../types/databaseTypes.js";
 import { generateDBML, generateSQL } from "../utils/sqlGenerator.js";
 import { parseDBMLToSchema } from "../utils/dbmlParser.js";
-import { createRelationEdge, createStarterSchema, createTableNode } from "../utils/schemaFactory.js";
+import { parseSQLToSchema } from "../utils/sqlImporter.js";
+import {
+    createRelationEdge,
+    createStarterSchema,
+    createTableNode,
+    hasSchemaSnapshot,
+    normalizeSchemaSnapshot
+} from "../utils/schemaFactory.js";
 import { downloadTextFile } from "../utils/download.js";
 import {
     getApiErrorMessage,
@@ -32,9 +42,134 @@ import {
 } from "../lib/api.js";
 
 const nodeTypes = {
-    tableNode: TableNode
+    tableNode: TableNode,
+    stickyNote: StickyNoteNode
 };
 
+// Shared editor создает заметки в том же snapshot формате, что личный editor.
+function createStickyNote(position = { x: 180, y: 160 }) {
+    const noteId = `note-${crypto.randomUUID()}`;
+
+    return {
+        id: noteId,
+        type: "stickyNote",
+        position,
+        data: {
+            noteId,
+            text: "New note"
+        }
+    };
+}
+
+// React Flow handle id содержит технический префикс, убираем его до сравнения.
+function getFieldIdFromHandle(handleId) {
+    return String(handleId || "")
+        .replace("source-", "")
+        .replace("target-", "");
+}
+
+// Возвращаем только поля, для которых handles реально видны на текущем canvas.
+function getVisibleFieldIds(node, detailLevel) {
+    if (!node || detailLevel === "all-fields") {
+        return null;
+    }
+
+    const fields = Array.isArray(node.data?.fields) ? node.data.fields : [];
+
+    if (detailLevel === "table-names") {
+        return new Set();
+    }
+
+    const indexedFields = new Set();
+
+    (node.data?.indexes || []).forEach((indexItem) => {
+        (indexItem.columns || []).forEach((column) => indexedFields.add(column));
+    });
+
+    return new Set(
+        fields
+            .filter((field) => field.pk || field.fk || field.unique || indexedFields.has(field.name))
+            .map((field) => field.id)
+    );
+}
+
+// Связь остается видимой даже когда режим детализации скрыл ее строку поля.
+function getEdgeForDetailLevel(edge, nodes, detailLevel) {
+    if (detailLevel === "all-fields") {
+        return edge;
+    }
+
+    const sourceNode = nodes.find((node) => node.id === edge.source);
+    const targetNode = nodes.find((node) => node.id === edge.target);
+    const sourceFieldIds = getVisibleFieldIds(sourceNode, detailLevel);
+    const targetFieldIds = getVisibleFieldIds(targetNode, detailLevel);
+    const nextEdge = { ...edge };
+
+    if (!sourceFieldIds?.has(getFieldIdFromHandle(edge.sourceHandle))) {
+        delete nextEdge.sourceHandle;
+    }
+
+    if (!targetFieldIds?.has(getFieldIdFromHandle(edge.targetHandle))) {
+        delete nextEdge.targetHandle;
+    }
+
+    return nextEdge;
+}
+
+/**
+ * Shared canvas выделяет связи выбранной таблицы или выбранной линии и заодно
+ * переводит handles в форму, допустимую для текущего detail level.
+ */
+function buildHighlightedEdges(edges, nodes, detailLevel, relationsHighlighted = false, selectedEdgeId = null, selectedNodeId = null) {
+    return edges.map((edge) => {
+        const displayEdge = getEdgeForDetailLevel(edge, nodes, detailLevel);
+        const isSelectedEdge = edge.id === selectedEdgeId;
+        const isRelatedToSelectedTable = selectedNodeId && (edge.source === selectedNodeId || edge.target === selectedNodeId);
+
+        if (isSelectedEdge) {
+            return {
+                ...displayEdge,
+                animated: true,
+                className: "edge-electric",
+                style: {
+                    ...(edge.style || {}),
+                    stroke: "#f59e0b",
+                    strokeWidth: 4,
+                    opacity: 1
+                }
+            };
+        }
+
+        if (relationsHighlighted || isRelatedToSelectedTable) {
+            return {
+                ...displayEdge,
+                animated: true,
+                className: "edge-electric",
+                style: {
+                    ...(edge.style || {}),
+                    stroke: "#38bdf8",
+                    strokeWidth: 3,
+                    opacity: 1
+                }
+            };
+        }
+
+        if (!selectedNodeId && !selectedEdgeId) {
+            return displayEdge;
+        }
+
+        return {
+            ...displayEdge,
+            className: "edge-muted",
+            style: {
+                ...(edge.style || {}),
+                opacity: 0.35
+            }
+        };
+    });
+}
+
+// React Flow provider нужен и read-only, и редактируемому shared проекту.
 export default function SharedProjectPage({ theme, onToggleTheme }) {
     return (
         <ReactFlowProvider>
@@ -43,6 +178,10 @@ export default function SharedProjectPage({ theme, onToggleTheme }) {
     );
 }
 
+/**
+ * Обертка shared route проверяет token, пароль ссылки и permission,
+ * а потом выбирает read-only показ или совместный редактор.
+ */
 function SharedProjectContent({ theme, onToggleTheme }) {
     const { token } = useParams();
     const [project, setProject] = useState(null);
@@ -51,6 +190,9 @@ function SharedProjectContent({ theme, onToggleTheme }) {
     const [password, setPassword] = useState("");
     const [accessPassword, setAccessPassword] = useState("");
     const [recordsTableId, setRecordsTableId] = useState(null);
+    const [detailLevel, setDetailLevel] = useState("all-fields");
+    const [showGrid, setShowGrid] = useState(true);
+    const [relationsHighlighted, setRelationsHighlighted] = useState(false);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -82,19 +224,28 @@ function SharedProjectContent({ theme, onToggleTheme }) {
         return () => controller.abort();
     }, [token]);
 
-    const schema = project?.schema_json?.nodes?.length
-        ? project.schema_json
-        : { nodes: [], edges: [] };
+    const schema = hasSchemaSnapshot(project?.schema_json)
+        ? normalizeSchemaSnapshot(project.schema_json)
+        : { nodes: [], edges: [], notes: [] };
 
     const nodes = useMemo(() => {
         return schema.nodes.map((node) => ({
             ...node,
             data: {
                 ...node.data,
+                detailLevel,
                 onOpenRecords: setRecordsTableId
             }
         }));
-    }, [schema.nodes]);
+    }, [schema.nodes, detailLevel]);
+
+    const noteNodes = useMemo(() => {
+        return Array.isArray(schema.notes) ? schema.notes : [];
+    }, [schema.notes]);
+
+    const visibleEdges = useMemo(() => {
+        return buildHighlightedEdges(schema.edges || [], schema.nodes || [], detailLevel, relationsHighlighted);
+    }, [schema.edges, schema.nodes, detailLevel, relationsHighlighted]);
 
     const recordsTable = nodes.find((node) => node.id === recordsTableId) || null;
 
@@ -228,8 +379,8 @@ function SharedProjectContent({ theme, onToggleTheme }) {
 
                 <main className="relative min-h-0 overflow-hidden bg-slate-100 dark:bg-slate-900">
                     <ReactFlow
-                        nodes={nodes}
-                        edges={schema.edges}
+                        nodes={[...nodes, ...noteNodes]}
+                        edges={visibleEdges}
                         nodeTypes={nodeTypes}
                         nodesDraggable={false}
                         nodesConnectable={false}
@@ -240,10 +391,19 @@ function SharedProjectContent({ theme, onToggleTheme }) {
                         fitView
                         fitViewOptions={{ padding: 0.2 }}
                     >
-                        <Background gap={18} size={1} />
+                        {showGrid && <Background gap={18} size={1} />}
                         <Controls />
-                        <MiniMap pannable zoomable />
                     </ReactFlow>
+                    <CanvasToolbar
+                        detailLevel={detailLevel}
+                        onDetailLevelChange={setDetailLevel}
+                        relationsHighlighted={relationsHighlighted}
+                        onToggleRelations={() => setRelationsHighlighted((value) => !value)}
+                        gridVisible={showGrid}
+                        onToggleGrid={() => setShowGrid((value) => !value)}
+                        relationsCount={(schema.edges || []).length}
+                        notesCount={noteNodes.length}
+                    />
                 </main>
             </div>
 
@@ -255,50 +415,105 @@ function SharedProjectContent({ theme, onToggleTheme }) {
     );
 }
 
+/**
+ * Совместный редактор сохраняет schema snapshot через share token.
+ * Он похож на EditorPage, но не дает владельческих действий вроде share settings.
+ */
 function SharedEditableProject({ token, project, accessPassword, theme, onToggleTheme }) {
-    const schema = project.schema_json?.nodes?.length ? project.schema_json : createStarterSchema();
+    const schema = hasSchemaSnapshot(project.schema_json)
+        ? normalizeSchemaSnapshot(project.schema_json)
+        : createStarterSchema();
     const sqlEditorRef = useRef(null);
+    // Общий проект использует тот же цикл canvas <-> code, но сохраняется по share token.
     const changeSourceRef = useRef("remote");
+    // Первое render-состояние уже пришло из API, его не нужно сразу отправлять обратно.
     const hasLoadedRef = useRef(false);
 
     const [projectName, setProjectName] = useState(project.name || "Проект");
     const [dialect, setDialect] = useState(project.dialect || DEFAULT_DIALECT);
+    const [exportDialect, setExportDialect] = useState(project.dialect || DEFAULT_DIALECT);
     const [nodes, setNodes, onNodesChangeBase] = useNodesState(schema.nodes);
     const [edges, setEdges, onEdgesChangeBase] = useEdgesState(schema.edges);
+    const [notes, setNotes] = useState(() => Array.isArray(schema.notes) ? schema.notes : []);
+    const [detailLevel, setDetailLevel] = useState("all-fields");
+    const [showGrid, setShowGrid] = useState(true);
+    const [relationsHighlighted, setRelationsHighlighted] = useState(false);
     const [schemaCode, setSchemaCode] = useState(project.schema_code || generateDBML(schema.nodes, schema.edges));
     const [schemaErrors, setSchemaErrors] = useState([]);
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [selectedEdgeId, setSelectedEdgeId] = useState(null);
     const [recordsTableId, setRecordsTableId] = useState(null);
     const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+    const [isImportSqlModalOpen, setIsImportSqlModalOpen] = useState(false);
     const [saveStatus, setSaveStatus] = useState("saved");
     const [saveError, setSaveError] = useState("");
 
-    const selectedTable = nodes.find((node) => node.id === selectedNodeId) || null;
+    const selectedTable = nodes.find((node) => node.id === selectedNodeId && node.type === "tableNode") || null;
     const selectedRelation = edges.find((edge) => edge.id === selectedEdgeId) || null;
     const recordsTable = nodes.find((node) => node.id === recordsTableId) || null;
 
-    const sql = useMemo(() => generateSQL(nodes, edges, dialect), [nodes, edges, dialect]);
+    const exportSql = useMemo(() => generateSQL(nodes, edges, exportDialect), [nodes, edges, exportDialect]);
 
     const flowNodes = useMemo(() => {
         return nodes.map((node) => ({
             ...node,
             data: {
                 ...node.data,
+                detailLevel,
                 onDoubleClick: selectTableCode,
                 onOpenRecords: openRecords,
                 onConfigure: selectTable
             }
         }));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [nodes, schemaCode]);
+    }, [nodes, schemaCode, detailLevel]);
 
+    const flowNotes = useMemo(() => {
+        return notes.map((note) => ({
+            ...note,
+            data: {
+                ...note.data,
+                onChange: (noteId, text) => {
+                    setNotes((currentNotes) => currentNotes.map((currentNote) => {
+                        if (currentNote.id !== noteId) {
+                            return currentNote;
+                        }
+
+                        return {
+                            ...currentNote,
+                            data: {
+                                ...currentNote.data,
+                                text
+                            }
+                        };
+                    }));
+                },
+                onDelete: (noteId) => {
+                    setNotes((currentNotes) =>
+                        currentNotes.filter((currentNote) => currentNote.id !== noteId)
+                    );
+
+                    if (selectedNodeId === noteId) {
+                        setSelectedNodeId(null);
+                    }
+                }
+            }
+        }));
+    }, [notes, selectedNodeId]);
+
+    const visibleEdges = useMemo(() => {
+        return buildHighlightedEdges(edges, nodes, detailLevel, relationsHighlighted, selectedEdgeId, selectedNodeId);
+    }, [edges, nodes, detailLevel, relationsHighlighted, selectedEdgeId, selectedNodeId]);
+
+    // Для shared edit сохраняем snapshot с debounce и пароль добавляем только когда ссылка этого требует.
     useEffect(() => {
         if (!hasLoadedRef.current) {
+            // Первый render отражает данные, которые уже пришли по share-link.
             hasLoadedRef.current = true;
             return;
         }
 
+        // Некорректный DBML-like код остается локально в editor до исправления.
         if (schemaErrors.length > 0) {
             return;
         }
@@ -306,13 +521,15 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
         const timeoutId = window.setTimeout(() => {
             setSaveStatus("saving");
 
+            // В shared route project id скрыт, поэтому сохранение идет по token и опциональному паролю.
             updateSharedProject(token, {
                 name: projectName || "Проект",
                 dialect,
                 schema_code: schemaCode,
                 schema_json: {
                     nodes,
-                    edges
+                    edges,
+                    notes
                 }
             }, accessPassword)
                 .then(() => {
@@ -326,9 +543,11 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
         }, 900);
 
         return () => window.clearTimeout(timeoutId);
-    }, [accessPassword, dialect, edges, nodes, projectName, schemaCode, schemaErrors, token]);
+    }, [accessPassword, dialect, edges, nodes, notes, projectName, schemaCode, schemaErrors, token]);
 
+    // Изменения на canvas обновляют текст схемы, если источником был не parser.
     useEffect(() => {
+        // Parser и remote initialization уже знают текущий текст, повторно генерировать его не надо.
         if (changeSourceRef.current !== "canvas") {
             if (changeSourceRef.current === "remote") {
                 changeSourceRef.current = "canvas";
@@ -337,16 +556,20 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
             return;
         }
 
+        // Canvas-редактирование должно быть видно всем участникам и в текстовом виде.
         setSchemaCode(generateDBML(nodes, edges));
         setSchemaErrors([]);
     }, [nodes, edges]);
 
+    // Редактирование DBML-like кода пересобирает shared canvas после паузы набора.
     useEffect(() => {
+        // Этот parser запускается только после ручного редактирования DBML-like панели.
         if (changeSourceRef.current !== "code") {
             return;
         }
 
         const timeoutId = window.setTimeout(() => {
+            // Текущие nodes нужны parser'у, чтобы не пересоздавать id и позиции при каждом вводе.
             const parsed = parseDBMLToSchema(schemaCode, nodes);
 
             if (parsed.errors.length > 0) {
@@ -381,8 +604,19 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
 
     const onNodesChange = useCallback((changes) => {
         changeSourceRef.current = "canvas";
-        onNodesChangeBase(changes);
-    }, [onNodesChangeBase]);
+        // React Flow смешивает table nodes и заметки, а snapshot хранит их раздельно.
+        const noteIds = new Set(notes.map((note) => note.id));
+        const noteChanges = changes.filter((change) => noteIds.has(change.id));
+        const tableChanges = changes.filter((change) => !noteIds.has(change.id));
+
+        if (tableChanges.length > 0) {
+            onNodesChangeBase(tableChanges);
+        }
+
+        if (noteChanges.length > 0) {
+            setNotes((currentNotes) => applyNodeChanges(noteChanges, currentNotes));
+        }
+    }, [notes, onNodesChangeBase]);
 
     const onEdgesChange = useCallback((changes) => {
         changeSourceRef.current = "canvas";
@@ -406,6 +640,17 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
         setSelectedEdgeId(null);
     }
 
+    function addStickyNote() {
+        const note = createStickyNote({
+            x: 180 + notes.length * 28,
+            y: 140 + notes.length * 28
+        });
+
+        setNotes((currentNotes) => [...currentNotes, note]);
+        setSelectedNodeId(note.id);
+        setSelectedEdgeId(null);
+    }
+
     function deleteSelected() {
         if (selectedEdgeId) {
             setEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== selectedEdgeId));
@@ -414,6 +659,12 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
         }
 
         if (!selectedNodeId) {
+            return;
+        }
+
+        if (notes.some((note) => note.id === selectedNodeId)) {
+            setNotes((currentNotes) => currentNotes.filter((note) => note.id !== selectedNodeId));
+            setSelectedNodeId(null);
             return;
         }
 
@@ -472,6 +723,7 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
         changeSourceRef.current = "canvas";
         setNodes(nextSchema.nodes);
         setEdges(nextSchema.edges);
+        setNotes([]);
         setSelectedNodeId(null);
         setSelectedEdgeId(null);
         setSchemaErrors([]);
@@ -483,12 +735,39 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
             projectName,
             dialect,
             nodes,
-            edges
+            edges,
+            notes
         }, null, 2), "application/json");
     }
 
     function downloadSql() {
-        downloadTextFile(`${projectName || "schema"}-${dialect}.sql`, sql, "text/sql");
+        downloadTextFile(`${projectName || "schema"}-${exportDialect}.sql`, exportSql, "text/sql");
+    }
+
+    // SQL-import в командном проекте работает как обычное редактирование и уйдет в shared autosave.
+    function importSql(nextSql, nextDialect) {
+        const parsed = parseSQLToSchema(nextSql);
+
+        // Ошибочный SQL не должен затирать общий проект для остальных участников.
+        if (parsed.errors.length > 0) {
+            return parsed;
+        }
+
+        // После успешного импорта изменения уйдут через обычный shared autosave.
+        changeSourceRef.current = "canvas";
+        setDialect(nextDialect || dialect);
+        setExportDialect(nextDialect || dialect);
+        setNodes(parsed.nodes);
+        setEdges(parsed.edges);
+        setNotes([]);
+        setSelectedNodeId(null);
+        setSelectedEdgeId(null);
+        setRecordsTableId(null);
+        setSchemaErrors([]);
+        setSchemaCode(generateDBML(parsed.nodes, parsed.edges));
+        setIsImportSqlModalOpen(false);
+
+        return parsed;
     }
 
     function selectTableCode(tableName) {
@@ -557,6 +836,13 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
                         Сбросить
                     </button>
                     <button
+                        onClick={() => setIsImportSqlModalOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        <FileUp size={16} />
+                        Импорт SQL
+                    </button>
+                    <button
                         onClick={exportJson}
                         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                     >
@@ -587,8 +873,8 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
                 />
                 <main className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
                     <ReactFlow
-                        nodes={flowNodes}
-                        edges={edges}
+                        nodes={[...flowNodes, ...flowNotes]}
+                        edges={visibleEdges}
                         nodeTypes={nodeTypes}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
@@ -617,16 +903,25 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
                         fitView
                         fitViewOptions={{ padding: 0.2 }}
                     >
-                        <Background gap={18} size={1} />
+                        {showGrid && <Background gap={18} size={1} />}
                         <Controls />
-                        <MiniMap pannable zoomable />
                     </ReactFlow>
+                    <CanvasToolbar
+                        detailLevel={detailLevel}
+                        onDetailLevelChange={setDetailLevel}
+                        relationsHighlighted={relationsHighlighted}
+                        onToggleRelations={() => setRelationsHighlighted((value) => !value)}
+                        gridVisible={showGrid}
+                        onToggleGrid={() => setShowGrid((value) => !value)}
+                        onAddNote={addStickyNote}
+                        relationsCount={edges.length}
+                        notesCount={notes.length}
+                    />
                 </main>
                 <PropertiesPanel
                     selectedTable={selectedTable}
                     selectedRelation={selectedRelation}
                     dialect={dialect}
-                    onDialectChange={setDialect}
                     onUpdateTable={updateTable}
                     onDeleteField={deleteField}
                     onUpdateRelation={updateRelation}
@@ -636,11 +931,17 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
 
             <ExportModal
                 open={isSqlModalOpen}
-                dialect={dialect}
-                onDialectChange={setDialect}
-                sql={sql}
+                dialect={exportDialect}
+                onDialectChange={setExportDialect}
+                sql={exportSql}
                 onClose={() => setIsSqlModalOpen(false)}
                 onDownload={downloadSql}
+            />
+            <ImportSqlModal
+                open={isImportSqlModalOpen}
+                dialect={dialect}
+                onClose={() => setIsImportSqlModalOpen(false)}
+                onImport={importSql}
             />
             <RecordsModal
                 table={recordsTable}
@@ -650,6 +951,7 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
     );
 }
 
+// Статус shared autosave вынесен отдельно от тяжелой разметки canvas.
 function SharedSaveIndicator({ saveStatus, error }) {
     if (saveStatus === "saving") {
         return (
@@ -677,6 +979,7 @@ function SharedSaveIndicator({ saveStatus, error }) {
     );
 }
 
+// Общая оболочка для загрузки, ошибки пароля и read-only shared просмотра.
 function SharedShell({ title, theme, onToggleTheme, children }) {
     return (
         <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-white">

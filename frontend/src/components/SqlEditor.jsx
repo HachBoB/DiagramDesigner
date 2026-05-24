@@ -38,6 +38,10 @@ const TYPES = new Set([
     "varchar"
 ]);
 
+/**
+ * Ищем начало `//` комментария только вне строк. Иначе подсветка поломает
+ * значения вроде URL или текстовые примеры внутри Records.
+ */
 function findCommentIndex(line) {
     let quote = null;
 
@@ -57,18 +61,26 @@ function findCommentIndex(line) {
     return -1;
 }
 
+// CodeMirror не принимает пустые decoration ranges, поэтому проверка живет
+// в маленьком общем helper.
 function addMark(builder, from, to, className) {
     if (to > from) {
         builder.add(from, to, Decoration.mark({ class: className }));
     }
 }
 
+/**
+ * Легкий lexer для DBML-like кода строит CodeMirror decorations:
+ * ключевые слова, типы, строки, числа, комментарии и rainbow brackets.
+ */
 function buildDbmlDecorations(doc) {
     const builder = new RangeSetBuilder();
     const lines = doc.toString().split("\n");
     let offset = 0;
     let bracketDepth = 0;
 
+    // Глубина скобок меняется до закрывающей скобки и после открывающей,
+    // чтобы пара получила один и тот же цвет.
     function bracketClass(char) {
         if (char === "}" || char === ")" || char === "]") {
             bracketDepth = Math.max(0, bracketDepth - 1);
@@ -161,6 +173,8 @@ function buildDbmlDecorations(doc) {
     return builder.finish();
 }
 
+// Подсветка пересчитывается только после изменения документа, а не на каждом
+// React render страницы редактора.
 const dbmlHighlightPlugin = ViewPlugin.fromClass(
     class {
         constructor(view) {
@@ -178,6 +192,11 @@ const dbmlHighlightPlugin = ViewPlugin.fromClass(
     }
 );
 
+/**
+ * Обертка над CodeMirror держит редактор синхронизированным с React:
+ * пользовательский ввод идет наружу через onChange, а входной prop `value`
+ * может заменить документ после импорта, AI-правки или загрузки проекта.
+ */
 const SqlEditor = forwardRef(function SqlEditor(
     {
         value,
@@ -197,10 +216,13 @@ const SqlEditor = forwardRef(function SqlEditor(
         return new Set(errors.map((error) => error.line));
     }, [errors]);
 
+    // Ref защищает updateListener CodeMirror от замыкания на старый onChange.
     useEffect(() => {
         onChangeRef.current = onChange;
     }, [onChange]);
 
+    // CodeMirror создается один раз на DOM-контейнер и уничтожается вместе
+    // с компонентом, иначе после rerender появились бы несколько editor views.
     useEffect(() => {
         if (!containerRef.current || viewRef.current) {
             return;
@@ -243,6 +265,8 @@ const SqlEditor = forwardRef(function SqlEditor(
         };
     }, []);
 
+    // Внешнее изменение документа не должно повторно вызвать onChange и
+    // зациклить React state -> CodeMirror -> React state.
     useEffect(() => {
         const view = viewRef.current;
 
@@ -267,6 +291,7 @@ const SqlEditor = forwardRef(function SqlEditor(
         syncingFromPropsRef.current = false;
     }, [value]);
 
+    // Ошибочные строки подсвечиваем в gutter уже после рендера номеров строк.
     useEffect(() => {
         const view = viewRef.current;
 
@@ -280,6 +305,8 @@ const SqlEditor = forwardRef(function SqlEditor(
         });
     }, [errorLines, value]);
 
+    // Страница редактора получает минимальный imperative API для фокуса,
+    // прокрутки к ошибке и восстановления scroll position.
     useImperativeHandle(editorApiRef, () => ({
         focus() {
             viewRef.current?.focus();
@@ -355,6 +382,8 @@ const SqlEditor = forwardRef(function SqlEditor(
                                         return;
                                     }
 
+                                    // Парсер возвращает line/column, а CodeMirror
+                                    // ожидает абсолютный offset внутри документа.
                                     const lines = value.split("\n");
                                     const before = lines
                                         .slice(0, Math.max(0, error.line - 1))

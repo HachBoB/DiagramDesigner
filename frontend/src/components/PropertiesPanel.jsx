@@ -2,11 +2,14 @@ import { Plus, Settings2, Trash2, GitBranch, Gauge } from "lucide-react";
 import { DB_DIALECTS, RELATION_TYPES } from "../types/databaseTypes.js";
 import { createField, createIndex } from "../utils/schemaFactory.js";
 
+/**
+ * Правая панель свойств редактирует выбранную таблицу: имя, поля, Records
+ * и индексы. Изменения поднимаются в editor через переданные callbacks.
+ */
 export default function PropertiesPanel({
                                             selectedTable,
                                             selectedRelation,
                                             dialect,
-                                            onDialectChange,
                                             onUpdateTable,
                                             onDeleteField,
                                             onUpdateRelation,
@@ -99,6 +102,7 @@ export default function PropertiesPanel({
     }
 
     function addIndex() {
+        // Новый индекс сразу получает подходящую колонку, чтобы пользователь не видел пустой блок.
         const firstField = selectedTable.data.fields.find((field) => !field.pk)
             || selectedTable.data.fields[0];
         const indexes = [
@@ -139,11 +143,13 @@ export default function PropertiesPanel({
         return `idx_${selectedTable.data.name}_${normalizedColumns.join("_") || "fields"}`;
     }
 
+    // Автоимя следует за выбранными колонками, но ручное имя пользователя не перетираем.
     function getIndexNamePatch(indexItem, nextColumns) {
         const currentColumns = Array.isArray(indexItem.columns) ? indexItem.columns : [];
         const currentAutoName = buildIndexName(currentColumns);
         const hasManualName = Boolean(indexItem.name) && indexItem.name !== currentAutoName;
 
+        // Пустой patch оставляет введенное пользователем имя без изменений.
         return hasManualName
             ? {}
             : { name: buildIndexName(nextColumns) };
@@ -182,17 +188,13 @@ export default function PropertiesPanel({
                     Диалект БД
                 </div>
 
-                <select
-                    value={dialect}
-                    onChange={(event) => onDialectChange(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
-                >
-                    {Object.entries(DB_DIALECTS).map(([key, item]) => (
-                        <option key={key} value={key}>
-                            {item.label}
-                        </option>
-                    ))}
-                </select>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                    {DB_DIALECTS[dialect]?.label || dialect}
+                </div>
+
+                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                    Диалект выбирается только при создании проекта.
+                </p>
             </div>
 
             <div className="mb-5">
@@ -406,6 +408,10 @@ export default function PropertiesPanel({
     );
 }
 
+/**
+ * Когда выбран edge, панель переключается с таблицы на тип связи и подсказку,
+ * какие поля сейчас соединены.
+ */
 function RelationPropertiesPanel({
                                      relation,
                                      onUpdateRelation,
@@ -496,6 +502,7 @@ function RelationPropertiesPanel({
     );
 }
 
+// Короткая поясняющая строка в панели выбранной связи.
 function RelationHint({ title, text }) {
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">

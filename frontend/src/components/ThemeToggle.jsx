@@ -1,5 +1,9 @@
 import { Moon, Sun } from "lucide-react";
 
+/**
+ * Кнопка темы остается stateless: текущее значение и само переключение
+ * контролирует App, поэтому один переключатель можно ставить в разные шапки.
+ */
 export default function ThemeToggle({ theme, onToggle }) {
     const isDark = theme === "dark";
 

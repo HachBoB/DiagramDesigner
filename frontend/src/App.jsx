@@ -9,6 +9,10 @@ import DocsPage from "./pages/DocsPage.jsx";
 import SharedProjectPage from "./pages/SharedProjectPage.jsx";
 import { applyTheme, getSavedTheme, saveTheme } from "./utils/theme.js";
 
+/**
+ * Корневой компонент фронта хранит общую тему и передает ее тем страницам,
+ * у которых есть переключатель светлого и темного режима.
+ */
 export default function App() {
     const [theme, setTheme] = useState(getSavedTheme);
 
@@ -17,6 +21,8 @@ export default function App() {
         saveTheme(theme);
     }, [theme]);
 
+    // Тема меняется в одном месте, чтобы страница не расходилась с localStorage
+    // и классом `dark` на корневом HTML-элементе.
     function toggleTheme() {
         setTheme((currentTheme) => currentTheme === "dark" ? "light" : "dark");
     }

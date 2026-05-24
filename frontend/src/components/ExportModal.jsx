@@ -1,14 +1,18 @@
 import { X } from "lucide-react";
 import { DB_DIALECTS } from "../types/databaseTypes.js";
 
+/**
+ * Окно экспорта показывает SQL, который уже сгенерирован страницей редактора.
+ * Диалект меняется наверху, чтобы модалка оставалась только UI-оберткой.
+ */
 export default function ExportModal({
-                                        open,
-                                        dialect,
-                                        onDialectChange,
-                                        sql,
-                                        onClose,
-                                        onDownload
-                                    }) {
+    open,
+    dialect,
+    onDialectChange,
+    sql,
+    onClose,
+    onDownload
+}) {
     if (!open) {
         return null;
     }
@@ -23,7 +27,7 @@ export default function ExportModal({
                         </h2>
 
                         <p className="text-sm text-slate-500 dark:text-slate-400">
-                            Можно выбрать диалект и скачать отдельный SQL-файл.
+                            Выберите диалект для предпросмотра и файла выгрузки.
                         </p>
                     </div>
 
@@ -38,13 +42,13 @@ export default function ExportModal({
                 <div className="grid grid-cols-[240px_1fr]">
                     <div className="border-r border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
                         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            Диалект
+                            СУБД
                         </div>
 
                         <select
                             value={dialect}
                             onChange={(event) => onDialectChange(event.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-500 dark:focus:ring-blue-950"
                         >
                             {Object.entries(DB_DIALECTS).map(([key, item]) => (
                                 <option key={key} value={key}>
@@ -52,6 +56,10 @@ export default function ExportModal({
                                 </option>
                             ))}
                         </select>
+
+                        <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            Меняется только SQL в экспорте. Диалект проекта останется прежним.
+                        </p>
 
                         <button
                             onClick={onDownload}
@@ -62,8 +70,8 @@ export default function ExportModal({
                     </div>
 
                     <pre className="max-h-[560px] overflow-auto bg-white p-5 text-sm leading-6 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
-            <code>{sql}</code>
-          </pre>
+                        <code>{sql}</code>
+                    </pre>
                 </div>
             </div>
         </div>

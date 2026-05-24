@@ -24,6 +24,10 @@ const ACCESS_OPTIONS = [
     }
 ];
 
+/**
+ * Модалка шаринга загружает текущее состояние доступа, меняет режим ссылки
+ * и показывает людей, которые уже открывали или редактировали проект.
+ */
 export default function ShareSettingsModal({ projectId, open, onClose }) {
     const [share, setShare] = useState(null);
     const [access, setAccess] = useState("private");
@@ -33,6 +37,7 @@ export default function ShareSettingsModal({ projectId, open, onClose }) {
     const [error, setError] = useState("");
     const [copied, setCopied] = useState(false);
 
+    // Ссылка существует только когда backend уже выдал share token.
     const shareUrl = useMemo(() => {
         if (!share?.share_token) {
             return "";
@@ -41,6 +46,8 @@ export default function ShareSettingsModal({ projectId, open, onClose }) {
         return `${window.location.origin}/share/${share.share_token}`;
     }, [share?.share_token]);
 
+    // Настройки заново подтягиваются при каждом открытии, чтобы владелец видел
+    // актуальный token, права ссылки и список участников.
     useEffect(() => {
         if (!open || !projectId) {
             return;
@@ -72,6 +79,8 @@ export default function ShareSettingsModal({ projectId, open, onClose }) {
         return null;
     }
 
+    // Пароль отправляем только для password-режима. Пустой пароль в этом режиме
+    // backend трактует как "не менять текущий", если он уже задан.
     async function saveShare() {
         setStatus("saving");
         setError("");
@@ -93,6 +102,7 @@ export default function ShareSettingsModal({ projectId, open, onClose }) {
         }
     }
 
+    // Clipboard API вызывается только для реально созданной ссылки.
     async function copyLink() {
         if (!shareUrl) {
             return;
@@ -305,6 +315,10 @@ export default function ShareSettingsModal({ projectId, open, onClose }) {
     );
 }
 
+/**
+ * Компактная строка списка доступа используется и для владельца,
+ * и для режима ссылки, и для уже присоединившихся пользователей.
+ */
 function ViewerLine({ icon, title, description }) {
     return (
         <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-900">

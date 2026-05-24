@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogOut, Mail, Save, User, X } from "lucide-react";
 import {
@@ -9,6 +9,10 @@ import {
     updateProfile
 } from "../lib/api.js";
 
+/**
+ * Иконка профиля одновременно служит входом в модалку настроек аккаунта.
+ * Она читает локальную сессию, а после сохранения синхронизирует ее с API.
+ */
 export default function ProfileButton({ onProfileUpdated }) {
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
@@ -17,16 +21,16 @@ export default function ProfileButton({ onProfileUpdated }) {
     const [status, setStatus] = useState("idle");
     const [error, setError] = useState("");
 
-    useEffect(() => {
-        if (!isOpen) {
-            return;
-        }
-
+    // Перед открытием перечитываем сохраненного пользователя, чтобы модалка
+    // не показывала устаревшие данные после обновления профиля в другой шапке.
+    function handleOpen() {
         const storedUser = getStoredUser();
         setUser(storedUser);
         setForm(profileForm(storedUser));
         setError("");
-    }, [isOpen]);
+        setStatus("idle");
+        setIsOpen(true);
+    }
 
     if (!isAuthenticated()) {
         return null;
@@ -34,6 +38,10 @@ export default function ProfileButton({ onProfileUpdated }) {
 
     const initials = getInitials(user?.name || user?.email || "П");
 
+    /**
+     * Почта и имя отправляются всегда. Поля смены пароля добавляются в payload
+     * только когда пользователь действительно ввел новый пароль.
+     */
     async function handleSubmit(event) {
         event.preventDefault();
         setStatus("saving");
@@ -62,6 +70,7 @@ export default function ProfileButton({ onProfileUpdated }) {
         }
     }
 
+    // logout очищает token даже если сервер уже недоступен, это делает api-слой.
     async function handleLogout() {
         await logout();
         setIsOpen(false);
@@ -73,7 +82,7 @@ export default function ProfileButton({ onProfileUpdated }) {
         <>
             <button
                 type="button"
-                onClick={() => setIsOpen(true)}
+                onClick={handleOpen}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-sm font-black text-white shadow-sm hover:bg-blue-700"
                 title="Профиль"
                 aria-label="Открыть профиль"
@@ -211,6 +220,8 @@ export default function ProfileButton({ onProfileUpdated }) {
     );
 }
 
+// Из API в форму переносим только профильные поля, а password поля каждый раз
+// открываем пустыми.
 function profileForm(user) {
     return {
         name: user?.name || "",
@@ -221,6 +232,7 @@ function profileForm(user) {
     };
 }
 
+// Аватар без картинки строится из первых букв первых двух частей имени.
 function getInitials(value) {
     return value
         .trim()

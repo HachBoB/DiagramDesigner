@@ -33,18 +33,22 @@ const RELATION_META = {
   },
 }
 
+// Legacy helper returns visual labels and colors for each relation kind.
 export function getRelationMeta(relationType = 'one-to-many') {
   return RELATION_META[relationType] ?? RELATION_META['one-to-many']
 }
 
+// Field handle ids keep relation direction, visible side and stable field id.
 export function buildFieldHandleId(direction, side, fieldId) {
   return `field-${direction}-${side}:${fieldId}`
 }
 
+// Table-level handles are used when an edge is not pinned to a field row.
 export function buildTableHandleId(direction, side) {
   return `table-${direction}-${side}`
 }
 
+// Both old and side-aware handle formats are accepted during normalization.
 export function extractFieldIdFromHandle(handleId) {
   if (!handleId) {
     return null
@@ -60,6 +64,10 @@ export function extractFieldIdFromHandle(handleId) {
   return match ? match[1] : null
 }
 
+/**
+ * Legacy layout can move tables left or right. Rebuilding handle sides after
+ * that move keeps lines attached to the nearest side of source and target.
+ */
 export function resolveEdgeHandles(edge, nodes) {
   const sourceNode = nodes.find((node) => node.id === edge.source)
   const targetNode = nodes.find((node) => node.id === edge.target)
@@ -86,6 +94,7 @@ export function resolveEdgeHandles(edge, nodes) {
   }
 }
 
+// A new legacy field starts normalized so every boolean flag is predictable.
 export function createField(overrides = {}) {
   return normalizeField({
     id: `field-${crypto.randomUUID()}`,
@@ -99,6 +108,7 @@ export function createField(overrides = {}) {
   })
 }
 
+// A blank legacy table already includes common technical fields for the demo.
 export function createTable({ name = 'new_table', position = { x: 120, y: 120 } } = {}) {
   return {
     id: `table-${crypto.randomUUID()}`,
@@ -122,6 +132,7 @@ export function createTable({ name = 'new_table', position = { x: 120, y: 120 } 
   }
 }
 
+// Simple grid placement is enough before the dependency layout runs.
 export function getNextTablePosition(index) {
   return {
     x: 120 + (index % 3) * 320,
@@ -129,6 +140,10 @@ export function getNextTablePosition(index) {
   }
 }
 
+/**
+ * A lightweight topological layout groups tables by dependency depth.
+ * Nodes inside each column keep a stable vertical order from their old position.
+ */
 export function layoutSchemaNodes(nodes, edges) {
   if (nodes.length === 0) {
     return nodes
@@ -217,6 +232,7 @@ export function layoutSchemaNodes(nodes, edges) {
   }))
 }
 
+// Legacy demo state gives the old studio path a complete ecommerce example.
 export function createDemoState() {
   const usersFields = [
     createField({
@@ -399,6 +415,7 @@ export function createDemoState() {
   }
 }
 
+// Broken or missing storage falls back to the demo instead of a blank screen.
 export function readStoredSchema() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -413,6 +430,10 @@ export function readStoredSchema() {
   }
 }
 
+/**
+ * Imported legacy state is narrowed to the shape used by old table nodes
+ * before it reaches the editor surface.
+ */
 export function normalizeSchemaState(input) {
   const fallback = createDemoState()
 
@@ -437,6 +458,7 @@ export function normalizeSchemaState(input) {
   }
 }
 
+// Blank state keeps project metadata but deliberately starts with no nodes.
 export function createBlankState(projectName = 'Untitled project') {
   return {
     version: 1,
@@ -447,6 +469,7 @@ export function createBlankState(projectName = 'Untitled project') {
   }
 }
 
+// Legacy text export mirrors the newer utility used by the current frontend.
 export function downloadTextFile(filename, content, mimeType) {
   const blob = new Blob([content], { type: mimeType })
   const url = URL.createObjectURL(blob)
@@ -460,6 +483,7 @@ export function downloadTextFile(filename, content, mimeType) {
   URL.revokeObjectURL(url)
 }
 
+// Legacy SQL export builds one CREATE TABLE statement per visible table.
 export function generateSqlScript(projectName, nodes, edges) {
   const statements = nodes.map((node) => buildCreateTableStatement(node, nodes, edges))
 
@@ -471,6 +495,7 @@ export function generateSqlScript(projectName, nodes, edges) {
   ].join('\n')
 }
 
+// Invalid nodes are dropped while valid nodes receive safe ids and positions.
 function normalizeNode(node) {
   if (!node || typeof node !== 'object') {
     return null
@@ -495,6 +520,7 @@ function normalizeNode(node) {
   }
 }
 
+// Primary fields are always unique and non-null after normalization.
 function normalizeField(field) {
   if (!field || typeof field !== 'object') {
     return null
@@ -518,6 +544,7 @@ function normalizeField(field) {
   return normalized
 }
 
+// Legacy edge input is reduced to ids, handles and known relation type.
 function normalizeEdge(edge) {
   if (!edge || typeof edge !== 'object' || !edge.source || !edge.target) {
     return null
@@ -539,6 +566,7 @@ function normalizeEdge(edge) {
   }
 }
 
+// A missing or malformed position receives a readable fallback.
 function normalizePosition(position) {
   return {
     x: Number.isFinite(position?.x) ? position.x : 120,
@@ -546,10 +574,15 @@ function normalizePosition(position) {
   }
 }
 
+// Vertical layout spacing grows with the amount of rendered fields.
 function estimateNodeHeight(node) {
   return 210 + node.data.fields.length * 74
 }
 
+/**
+ * One table statement merges column flags, primary key and relation-derived
+ * foreign keys before the script is concatenated.
+ */
 function buildCreateTableStatement(node, nodes, edges) {
   const tableName = sanitizeIdentifier(node.data.label || node.id)
   const fields = node.data.fields
@@ -600,6 +633,7 @@ function buildCreateTableStatement(node, nodes, edges) {
   return `CREATE TABLE "${tableName}" (\n${lines.join(',\n')}\n);\n`
 }
 
+// Target table receives foreign keys from incoming relation edges.
 function collectForeignKeysForTable(targetNode, nodes, edges) {
   return edges
     .filter((edge) => edge.target === targetNode.id)
@@ -625,6 +659,7 @@ function collectForeignKeysForTable(targetNode, nodes, edges) {
     .filter(Boolean)
 }
 
+// SQL identifiers use underscores instead of whitespace and no raw quotes.
 function sanitizeIdentifier(value) {
   return String(value || '')
     .trim()

@@ -1,5 +1,19 @@
 import { createRelationEdge } from "./schemaFactory.js";
 
+/*
+ * DBML parser читает не полный стандарт DBML, а наш небольшой DBML-like формат редактора.
+ * Он специально line-oriented: пользователю проще получить ошибку "на строке 12",
+ * а нам проще поддерживать блоки вида:
+ *
+ * Table users { ... }
+ * Ref one-to-many: users.id > orders.user_id
+ * Records users(id, email) { ... }
+ *
+ * Сначала текст собирается в промежуточные tables/refs/records,
+ * а React Flow nodes и edges создаются позже, когда уже известны все имена и поля.
+ */
+
+// Все ошибки parser возвращает в одной форме, чтобы SqlEditor показал строку, колонку и подсказку.
 function createParserError(line, column, message, hint = "") {
     return {
         line,
@@ -10,6 +24,7 @@ function createParserError(line, column, message, hint = "") {
 }
 
 function parseFlags(rawFlags = "", lineNumber = 1) {
+    // Формат flags простой: элементы разделены запятыми внутри квадратных скобок поля.
     const allowedFlags = ["pk", "fk", "unique", "not null", "nullable"];
 
     const flags = rawFlags
@@ -34,6 +49,7 @@ function parseFlags(rawFlags = "", lineNumber = 1) {
 
     return {
         result: {
+            // В текстовом формате отсутствие "not null" означает nullable по умолчанию.
             pk: flags.includes("pk"),
             fk: flags.includes("fk"),
             unique: flags.includes("unique"),
@@ -43,6 +59,7 @@ function parseFlags(rawFlags = "", lineNumber = 1) {
     };
 }
 
+// При редактировании текста сохраняем прежнюю позицию таблицы, если имя таблицы не поменялось.
 function getExistingPosition(existingNodes, tableName, index) {
     const existingNode = existingNodes.find((node) => {
         return node.data?.name === tableName;
@@ -58,6 +75,7 @@ function getExistingPosition(existingNodes, tableName, index) {
     };
 }
 
+// Стабильный table id не дает React Flow считать старую таблицу удаленной при каждом вводе текста.
 function getExistingTableId(existingNodes, tableName) {
     const existingNode = existingNodes.find((node) => {
         return node.data?.name === tableName;
@@ -66,6 +84,7 @@ function getExistingTableId(existingNodes, tableName) {
     return existingNode?.id || crypto.randomUUID();
 }
 
+// Стабильный field id нужен связям: edge привязан к handle поля, а не только к имени.
 function getExistingFieldId(existingNodes, tableName, fieldName) {
     const existingNode = existingNodes.find((node) => {
         return node.data?.name === tableName;
@@ -78,6 +97,7 @@ function getExistingFieldId(existingNodes, tableName, fieldName) {
     return existingField?.id || crypto.randomUUID();
 }
 
+// Index id сохраняем по имени или составу колонок, чтобы UI не пересоздавал карточку индекса.
 function getExistingIndexId(existingNodes, tableName, indexName, columns) {
     const existingNode = existingNodes.find((node) => {
         return node.data?.name === tableName;
@@ -95,9 +115,11 @@ function getExistingIndexId(existingNodes, tableName, indexName, columns) {
     return existingIndex?.id || crypto.randomUUID();
 }
 
+// Парсим поле отдельно, чтобы ошибки в одной строке не рушили весь Table-блок.
 function parseFieldLine(line, lineNumber, tableName, existingNodes) {
     const errors = [];
 
+    // Квадратные скобки нужны только для списка flags после типа поля.
     if (line.includes("[") && !line.includes("]")) {
         errors.push(
             createParserError(
@@ -130,6 +152,7 @@ function parseFieldLine(line, lineNumber, tableName, existingNodes) {
         };
     }
 
+    // fieldPart оставляем для "name TYPE", а rawFlags отдельно для parseFlags.
     let fieldPart = line;
     let rawFlags = "";
 
@@ -138,6 +161,7 @@ function parseFieldLine(line, lineNumber, tableName, existingNodes) {
     if (flagsStart !== -1) {
         const flagsEnd = line.lastIndexOf("]");
 
+        // Все после закрывающей ] считается ошибкой, иначе опечатка потерялась бы без следа.
         fieldPart = line.slice(0, flagsStart).trim();
         rawFlags = line.slice(flagsStart + 1, flagsEnd).trim();
 
@@ -155,6 +179,7 @@ function parseFieldLine(line, lineNumber, tableName, existingNodes) {
         }
     }
 
+    // Минимальный валидный field declaration: имя поля и хотя бы один токен типа.
     const fieldMatch = fieldPart.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)$/);
 
     if (!fieldMatch) {
@@ -187,6 +212,7 @@ function parseFieldLine(line, lineNumber, tableName, existingNodes) {
         );
     }
 
+    // Flags парсим после имени и типа, чтобы даже при ошибке flag сохранить само поле.
     const parsedFlags = parseFlags(rawFlags, lineNumber);
     errors.push(...parsedFlags.errors);
 
@@ -204,6 +230,7 @@ function parseFieldLine(line, lineNumber, tableName, existingNodes) {
 function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes) {
     const errors = [];
 
+    // В Indexes поддерживаем короткие формы: email, idx_email email, (a, b), idx_ab (a, b).
     if (line.includes("[") && !line.includes("]")) {
         return {
             index: null,
@@ -223,6 +250,7 @@ function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes)
     const flagsStart = line.indexOf("[");
 
     if (flagsStart !== -1) {
+        // Сейчас для индекса в скобках разрешен только [unique].
         const flagsEnd = line.lastIndexOf("]");
         indexPart = line.slice(0, flagsStart).trim();
         rawFlags = line.slice(flagsStart + 1, flagsEnd).trim();
@@ -233,6 +261,7 @@ function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes)
         .map((item) => item.trim().toLowerCase())
         .filter(Boolean);
 
+    // Неизвестный flag не ломает всю таблицу, а появляется отдельной ошибкой редактора.
     flags.forEach((flag) => {
         if (flag !== "unique") {
             errors.push(
@@ -252,6 +281,7 @@ function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes)
     const compositeMatch = indexPart.match(/^\(([^)]*)\)$/);
     const namedSingleMatch = indexPart.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)$/);
 
+    // Сначала отделяем имя индекса от списка колонок, если пользователь его указал.
     if (namedCompositeMatch) {
         name = namedCompositeMatch[1];
         rawColumns = namedCompositeMatch[2];
@@ -262,6 +292,7 @@ function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes)
         rawColumns = namedSingleMatch[2];
     }
 
+    // Колонки остаются строками; существование полей проверится после полного разбора таблиц.
     const columns = rawColumns
         .split(",")
         .map((column) => column.trim())
@@ -291,6 +322,7 @@ function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes)
         }
     });
 
+    // Новые таблицы из кода раскладываем сеткой, иначе они появились бы в одной точке canvas.
     return {
         index: columns.length > 0
             ? {
@@ -306,6 +338,7 @@ function parseIndexLine(line, lineNumber, tableName, indexNumber, existingNodes)
 
 function stripInlineComment(value) {
     const line = String(value || "");
+    // Комментарий // внутри строки Records или note значения не обрезаем.
     let quote = null;
 
     for (let index = 0; index < line.length - 1; index += 1) {
@@ -313,6 +346,7 @@ function stripInlineComment(value) {
         const nextChar = line[index + 1];
 
         if ((char === "'" || char === "\"") && line[index - 1] !== "\\") {
+            // quote переключается только на неэкранированной кавычке.
             quote = quote === char ? null : quote || char;
         }
 
@@ -325,6 +359,7 @@ function stripInlineComment(value) {
 }
 
 function parseRefLine(line, lineNumber) {
+    // Ref задает одну направленную связь в читаемом виде: source.field > target.field.
     const refRegex =
         /^Ref\s+([a-z-]+):\s+([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*>\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*$/;
 
@@ -346,6 +381,7 @@ function parseRefLine(line, lineNumber) {
 
     const [, relationType, sourceTable, sourceField, targetTable, targetField] = match;
 
+    // Список типов синхронизирован с вариантами отношения в PropertiesPanel.
     const allowedRelations = ["one-to-one", "one-to-many", "many-to-many"];
 
     if (!allowedRelations.includes(relationType)) {
@@ -374,10 +410,13 @@ function parseRefLine(line, lineNumber) {
     };
 }
 
+// Строка Records похожа на CSV: запятые в кавычках остаются частью значения.
 function splitRecordValues(line) {
     const values = [];
     let current = "";
+    // quote говорит, что запятая относится к строке, а не разделяет колонки Records.
     let quote = null;
+    // Backslash нужен, чтобы следующая кавычка не закрыла значение преждевременно.
     let isEscaped = false;
 
     for (const char of line) {
@@ -406,6 +445,7 @@ function splitRecordValues(line) {
         }
 
         if (char === "," && !quote) {
+            // Только запятая вне строки завершает одно значение records row.
             values.push(current.trim());
             current = "";
             continue;
@@ -425,6 +465,7 @@ function splitRecordValues(line) {
 function parseRecordValue(value) {
     const trimmed = value.trim();
 
+    // Пустая ячейка остается пустой строкой, а null должен быть написан явно.
     if (!trimmed) {
         return "";
     }
@@ -445,6 +486,7 @@ function parseRecordValue(value) {
         (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
         (trimmed.startsWith("\"") && trimmed.endsWith("\""))
     ) {
+        // У строк снимаем внешние кавычки и возвращаем пользовательские escape-последовательности.
         return trimmed
             .slice(1, -1)
             .replace(/\\'/g, "'")
@@ -453,6 +495,7 @@ function parseRecordValue(value) {
     }
 
     if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+        // Числа храним числами, чтобы Records modal и SQL export не квотировали их как текст.
         return Number(trimmed);
     }
 
@@ -460,6 +503,7 @@ function parseRecordValue(value) {
 }
 
 function parseRecordsHeader(line, lineNumber) {
+    // Header заранее фиксирует порядок колонок для всех следующих rows блока Records.
     const recordsMatch = line.match(
         /^Records\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*\{\s*$/
     );
@@ -487,6 +531,7 @@ function parseRecordsHeader(line, lineNumber) {
     const errors = [];
     const usedColumns = new Set();
 
+    // На этом этапе проверяем форму имен и дубли, а наличие полей сверяем позже с таблицей.
     columns.forEach((column) => {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column)) {
             errors.push(
@@ -536,6 +581,10 @@ function parseRecordsHeader(line, lineNumber) {
     };
 }
 
+/**
+ * Превращает DBML-like текст редактора обратно в nodes и edges.
+ * Сохраняем id и позиции существующих таблиц, чтобы печать в коде не дергала canvas.
+ */
 export function parseDBMLToSchema(text, existingNodes = []) {
     const lines = String(text || "").split("\n");
     const errors = [];
@@ -545,17 +594,21 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
     let index = 0;
 
+    // Первый проход читает верхнеуровневые блоки в том порядке, в котором их набрал пользователь.
     while (index < lines.length) {
         const rawLine = lines[index];
+        // Комментарий справа от кода не должен влиять на синтаксис line parser.
         const line = stripInlineComment(rawLine).trim();
         const lineNumber = index + 1;
 
         if (!line || line.startsWith("//")) {
+            // Пустые строки и комментарии разрешены между любыми блоками.
             index += 1;
             continue;
         }
 
         if (line.startsWith("Table")) {
+            // Заголовок Table открывает отдельный вложенный цикл чтения fields/Indexes.
             const tableMatch = line.match(/^Table\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\{\s*$/);
 
             if (!tableMatch) {
@@ -573,6 +626,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             }
 
             const tableName = tableMatch[1];
+            // Пока Table не закрыт, поля и индексы храним во временных массивах этой таблицы.
             const fields = [];
             const indexes = [];
             const usedFieldNames = new Set();
@@ -582,6 +636,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
             let closed = false;
 
+            // Внутри Table принимаем поля и вложенный Indexes до закрывающей скобки таблицы.
             while (index < lines.length) {
                 const fieldRawLine = lines[index];
                 const fieldLine = stripInlineComment(fieldRawLine).trim();
@@ -593,15 +648,18 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 }
 
                 if (fieldLine === "}") {
+                    // Эта скобка закрывает Table, если мы не находимся во вложенном Indexes.
                     closed = true;
                     index += 1;
                     break;
                 }
 
                 if (/^Indexes\s*\{\s*$/i.test(fieldLine)) {
+                    // Indexes разрешен только внутри Table и имеет собственный цикл чтения.
                     index += 1;
                     let indexesClosed = false;
 
+                    // Indexes имеет свой уровень закрытия, его нельзя спутать со скобкой Table.
                     while (index < lines.length) {
                         const indexRawLine = lines[index];
                         const indexLine = stripInlineComment(indexRawLine).trim();
@@ -613,12 +671,14 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                         }
 
                         if (indexLine === "}") {
+                            // Эта скобка закрывает только Indexes; внешний Table остается открытым.
                             indexesClosed = true;
                             index += 1;
                             break;
                         }
 
                         if (indexLine.startsWith("Table") || indexLine.startsWith("Ref") || indexLine.startsWith("Records")) {
+                            // Новый верхнеуровневый блок внутри Indexes обычно означает пропущенную }.
                             errors.push(
                                 createParserError(
                                     indexLineNumber,
@@ -630,6 +690,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                             break;
                         }
 
+                        // Каждую строку Indexes читаем независимо, чтобы показать точную ошибку.
                         const parsedIndex = parseIndexLine(indexLine, indexLineNumber, tableName, indexes.length + 1, existingNodes);
                         errors.push(...parsedIndex.errors);
 
@@ -655,6 +716,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 }
 
                 if (fieldLine.startsWith("Table")) {
+                    // Новый Table до закрытия предыдущего почти всегда означает потерянную } выше.
                     errors.push(
                         createParserError(
                             fieldLineNumber,
@@ -681,6 +743,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                     continue;
                 }
 
+                // Обычная строка внутри Table считается field declaration.
                 const parsedField = parseFieldLine(
                     fieldLine,
                     fieldLineNumber,
@@ -692,6 +755,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
                 if (parsedField.field) {
                     if (usedFieldNames.has(parsedField.field.name)) {
+                        // Дубликат поля оставляем ошибкой, а не затираем первое объявление.
                         errors.push(
                             createParserError(
                                 fieldLineNumber,
@@ -723,6 +787,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             const duplicateTable = tables.find((table) => table.name === tableName);
 
             if (duplicateTable) {
+                // Nodes ищутся по имени таблицы, поэтому одинаковые названия неоднозначны.
                 errors.push(
                     createParserError(
                         tableStartLine,
@@ -733,6 +798,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 );
             }
 
+            // После закрытия Table добавляем его промежуточную модель в общий список.
             tables.push({
                 id: getExistingTableId(existingNodes, tableName),
                 name: tableName,
@@ -743,7 +809,9 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             continue;
         }
 
+        // Ref пока сохраняем именами таблиц и полей. Id появятся после сборки nodes.
         if (line.startsWith("Ref")) {
+            // Ref не создает edge сразу: нужные таблицы могут быть объявлены ниже.
             const parsedRef = parseRefLine(line, lineNumber);
 
             errors.push(...parsedRef.errors);
@@ -757,6 +825,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
         }
 
         if (line.startsWith("Records")) {
+            // Header Records задает таблицу и порядок колонок для строк ниже.
             const parsedHeader = parseRecordsHeader(line, lineNumber);
             errors.push(...parsedHeader.errors);
 
@@ -772,6 +841,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
 
             let closed = false;
 
+            // Строки Records читаются отдельно от таблицы и позже проверяются по ее полям.
             while (index < lines.length) {
                 const rowRawLine = lines[index];
                 const rowLine = stripInlineComment(rowRawLine).trim();
@@ -783,12 +853,14 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 }
 
                 if (rowLine === "}") {
+                    // Закрыли только Records-блок, следующий line снова будет верхнеуровневым.
                     closed = true;
                     index += 1;
                     break;
                 }
 
                 if (rowLine.startsWith("Table") || rowLine.startsWith("Ref") || rowLine.startsWith("Records")) {
+                    // Новый блок в Records означает, что закрывающая } была забыта.
                     errors.push(
                         createParserError(
                             rowLineNumber,
@@ -801,6 +873,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                     break;
                 }
 
+                // Строка Records разбирается отдельно, потому что строковые значения могут содержать запятые.
                 const parsedRow = splitRecordValues(rowLine);
 
                 if (parsedRow.hasOpenQuote) {
@@ -815,6 +888,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 }
 
                 if (parsedRow.values.length !== records.columns.length) {
+                    // Без совпадения количества ячеек непонятно, к какой колонке отнести значение.
                     errors.push(
                         createParserError(
                             rowLineNumber,
@@ -831,6 +905,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             }
 
             if (!closed) {
+                // Если дошли до конца без }, редактор должен подсветить незакрытый Table.
                 errors.push(
                     createParserError(
                         lines.length,
@@ -841,12 +916,14 @@ export function parseDBMLToSchema(text, existingNodes = []) {
                 );
             }
 
+            // Rows временно сохраняются отдельно и позже прикрепятся к node таблицы.
             recordsBlocks.push(records);
 
             continue;
         }
 
         if (line === "}") {
+            // На верхнем уровне } закрывать нечего, значит пользователь закрыл лишний блок.
             errors.push(
                 createParserError(
                     lineNumber,
@@ -860,6 +937,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             continue;
         }
 
+        // Любой другой верхнеуровневый текст не входит в поддерживаемый DBML-like grammar.
         errors.push(
             createParserError(
                 lineNumber,
@@ -872,7 +950,9 @@ export function parseDBMLToSchema(text, existingNodes = []) {
         index += 1;
     }
 
+    // Сначала строим таблицы, чтобы Records и Ref уже могли проверяться по реальным полям.
     const nodes = tables.map((table, tableIndex) => {
+        // Records может находиться ниже таблицы в тексте, поэтому ищем его только на этапе node build.
         const records = recordsBlocks.find((item) => item.tableName === table.name);
 
         return {
@@ -897,10 +977,12 @@ export function parseDBMLToSchema(text, existingNodes = []) {
         };
     });
 
+    // После чтения всех Table-блоков уже можно проверить, что Records ссылается на реальные поля.
     recordsBlocks.forEach((records) => {
         const table = tables.find((item) => item.name === records.tableName);
 
         if (!table) {
+            // Блок Records без Table нельзя прикрепить ни к одной карточке canvas.
             errors.push(
                 createParserError(
                     1,
@@ -913,6 +995,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
         }
 
         records.columns.forEach((column) => {
+            // Column header Records должен повторять имя поля таблицы один в один.
             const fieldExists = table.fields.some((field) => field.name === column);
 
             if (!fieldExists) {
@@ -928,9 +1011,11 @@ export function parseDBMLToSchema(text, existingNodes = []) {
         });
     });
 
+    // Indexes тоже валидируем после таблиц, чтобы UI не получил ссылку на несуществующее поле.
     tables.forEach((table) => {
         table.indexes.forEach((indexItem) => {
             indexItem.columns.forEach((column) => {
+                // Индекс в editor указывает на поля по имени, поэтому проверяем каждую колонку.
                 const fieldExists = table.fields.some((field) => field.name === column);
 
                 if (!fieldExists) {
@@ -947,9 +1032,11 @@ export function parseDBMLToSchema(text, existingNodes = []) {
         });
     });
 
+    // Ref хранится текстом по именам, а React Flow ожидает id таблиц и id field handles.
     const edges = [];
 
     refs.forEach((ref) => {
+        // На этом этапе таблицы уже nodes, поэтому source/target можно найти по их data.name.
         const sourceNode = nodes.find((node) => node.data.name === ref.sourceTable);
         const targetNode = nodes.find((node) => node.data.name === ref.targetTable);
 
@@ -983,6 +1070,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             return field.name === ref.sourceField;
         });
 
+        // Relation line крепится к строке поля, поэтому проверяются обе стороны Ref.
         const targetField = targetNode.data.fields.find((field) => {
             return field.name === ref.targetField;
         });
@@ -1013,6 +1101,7 @@ export function parseDBMLToSchema(text, existingNodes = []) {
             return;
         }
 
+        // Текстовая связь становится React Flow edge с handle id полей.
         edges.push(
             createRelationEdge(
                 sourceNode.id,

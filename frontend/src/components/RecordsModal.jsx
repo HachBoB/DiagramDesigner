@@ -1,6 +1,7 @@
 import { Download, Table2, X } from "lucide-react";
 import { downloadTextFile } from "../utils/download.js";
 
+// В таблице records null важно отличать от пустой строки и отсутствия колонки.
 function formatCellValue(value) {
     if (value === null || value === undefined) {
         return "(null)";
@@ -13,10 +14,15 @@ function formatCellValue(value) {
     return String(value);
 }
 
+// Тип берется из fields node, потому что Records хранит только колонки и rows.
 function getColumnType(table, column) {
     return table?.data?.fields?.find((field) => field.name === column)?.type || "";
 }
 
+/**
+ * CSV-ячейка экранирует кавычки и оборачивает значения с разделителями.
+ * Этого достаточно для данных, которые пользователь видит в RecordsModal.
+ */
 function toCsvValue(value) {
     if (value === null || value === undefined) {
         return "";
@@ -31,6 +37,10 @@ function toCsvValue(value) {
     return text;
 }
 
+/**
+ * Окно Records показывает примерные строки таблицы из schema snapshot и может
+ * выгрузить их в CSV без обращения к backend.
+ */
 export default function RecordsModal({ table, onClose }) {
     if (!table) {
         return null;
@@ -43,6 +53,7 @@ export default function RecordsModal({ table, onClose }) {
 
     const rows = Array.isArray(records.rows) ? records.rows : [];
 
+    // Экспорт строится по видимому порядку колонок, чтобы CSV совпал с таблицей.
     function downloadCsv() {
         const content = [
             columns.join(","),

@@ -14,6 +14,10 @@ import ThemeToggle from "../components/ThemeToggle.jsx";
 import ProfileButton from "../components/ProfileButton.jsx";
 import { isAuthenticated } from "../lib/api.js";
 
+/**
+ * Главная страница показывает продуктовый сценарий редактора и ведет
+ * авторизованного пользователя к проектам, а гостя к входу или регистрации.
+ */
 export default function LandingPage({ theme, onToggleTheme }) {
     const hasSession = isAuthenticated();
 
@@ -192,6 +196,7 @@ users.id > orders.user_id`}
     );
 }
 
+// Маленький счетчик помогает показать стартовые возможности редактора в hero.
 function Stat({ value, label }) {
     return (
         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-white/5 dark:shadow-none">
@@ -201,6 +206,7 @@ function Stat({ value, label }) {
     );
 }
 
+// Превью таблицы имитирует карточку canvas без зависимости от React Flow.
 function MockTable({ title, fields }) {
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-xl dark:border-white/10">
@@ -217,6 +223,7 @@ function MockTable({ title, fields }) {
     );
 }
 
+// Повторяемый блок преимуществ держит нижнюю часть главной страницы компактной.
 function Feature({ icon, title, text }) {
     return (
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/5 dark:shadow-none">

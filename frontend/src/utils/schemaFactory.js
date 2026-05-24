@@ -1,5 +1,43 @@
 import { MarkerType } from "reactflow";
 
+// Пустая схема имеет все коллекции сразу, чтобы editor не проверял undefined.
+export function createEmptySchema() {
+    return {
+        nodes: [],
+        edges: [],
+        notes: []
+    };
+}
+
+// Snapshot считаем схемой даже если в нем есть только nodes, edges или notes.
+export function hasSchemaSnapshot(schema) {
+    return Boolean(
+        schema
+        && (
+            Array.isArray(schema.nodes)
+            || Array.isArray(schema.edges)
+            || Array.isArray(schema.notes)
+        )
+    );
+}
+
+/**
+ * Backend, localStorage и старые проекты могут прислать неполный snapshot.
+ * Нормализация оставляет editor с массивами вместо ветвлений по null.
+ */
+export function normalizeSchemaSnapshot(schema, fallback = createEmptySchema()) {
+    if (!hasSchemaSnapshot(schema)) {
+        return fallback;
+    }
+
+    return {
+        nodes: Array.isArray(schema.nodes) ? schema.nodes : [],
+        edges: Array.isArray(schema.edges) ? schema.edges : [],
+        notes: Array.isArray(schema.notes) ? schema.notes : []
+    };
+}
+
+// Новое поле получает id сразу, потому что handles и React keys завязаны на него.
 export function createField(name = "field", type = "INTEGER") {
     return {
         id: crypto.randomUUID(),
@@ -12,6 +50,7 @@ export function createField(name = "field", type = "INTEGER") {
     };
 }
 
+// Индекс хранит список колонок: одиночный и составной индекс имеют одну форму.
 export function createIndex(columns = []) {
     const normalizedColumns = Array.isArray(columns)
         ? columns.filter(Boolean)
@@ -25,6 +64,10 @@ export function createIndex(columns = []) {
     };
 }
 
+/**
+ * Новая таблица сразу совместима с React Flow и schema snapshot:
+ * есть node id, data.tableId, стартовый primary key и пустые Records/Indexes.
+ */
 export function createTableNode(index = 1, position = { x: 200, y: 120 }) {
     const tableId = crypto.randomUUID();
 
@@ -52,6 +95,7 @@ export function createTableNode(index = 1, position = { x: 200, y: 120 }) {
     };
 }
 
+// Все связи создаются одинаковыми, чтобы canvas, SQL generator и DBML generator видели одну форму edge.
 export function createRelationEdge(
     source,
     target,
@@ -92,6 +136,10 @@ export function createRelationEdge(
     };
 }
 
+/**
+ * Стартовая схема дает пользователю живой пример: таблицы, связи, records и индексы.
+ * ID генерируются заново для каждого проекта, иначе связи из разных snapshots могли бы пересечься.
+ */
 export function createStarterSchema() {
     const usersId = crypto.randomUUID();
     const ordersId = crypto.randomUUID();
@@ -136,21 +184,14 @@ export function createStarterSchema() {
                 name: "users",
                 fields: usersFields,
                 records: {
-                    columns: ["id", "email", "name"],
+                    columns: ["id", "email", "name", "created_at"],
                     rows: [
-                        [1, "alice@example.com", "Alice"],
-                        [2, "bob@example.com", "Bob"],
-                        [3, "candice@example.com", "Candice"]
+                        [1, "alice@example.com", "Alice Johnson", "2026-01-10 09:00:00"],
+                        [2, "bob@example.com", "Bob Smith", "2026-01-12 11:30:00"],
+                        [3, "candice@example.com", "Candice Lee", "2026-01-15 14:45:00"]
                     ]
                 },
-                indexes: [
-                    {
-                        id: crypto.randomUUID(),
-                        name: "idx_users_email",
-                        columns: ["email"],
-                        unique: true
-                    }
-                ]
+                indexes: []
             }
         },
         {
@@ -162,10 +203,11 @@ export function createStarterSchema() {
                 name: "orders",
                 fields: ordersFields,
                 records: {
-                    columns: ["id", "user_id", "status"],
+                    columns: ["id", "user_id", "status", "created_at"],
                     rows: [
-                        [101, 1, "paid"],
-                        [102, 2, "pending"]
+                        [101, 1, "paid", "2026-02-03 10:15:00"],
+                        [102, 2, "pending", "2026-02-04 16:20:00"],
+                        [103, 1, "shipped", "2026-02-05 09:40:00"]
                     ]
                 },
                 indexes: [
@@ -195,8 +237,9 @@ export function createStarterSchema() {
                 records: {
                     columns: ["id", "title", "price", "stock"],
                     rows: [
-                        [201, "Keyboard", 89.99, 14],
-                        [202, "Mouse", 39.99, 28]
+                        [201, "Mechanical Keyboard", 89.99, 14],
+                        [202, "Wireless Mouse", 39.99, 28],
+                        [203, "USB-C Hub", 59.5, 9]
                     ]
                 },
                 indexes: [
@@ -221,7 +264,9 @@ export function createStarterSchema() {
                     columns: ["id", "order_id", "product_id", "quantity"],
                     rows: [
                         [301, 101, 201, 1],
-                        [302, 102, 202, 2]
+                        [302, 101, 202, 2],
+                        [303, 102, 203, 1],
+                        [304, 103, 202, 1]
                     ]
                 },
                 indexes: [
@@ -262,6 +307,7 @@ export function createStarterSchema() {
 
     return {
         nodes,
-        edges
+        edges,
+        notes: []
     };
 }

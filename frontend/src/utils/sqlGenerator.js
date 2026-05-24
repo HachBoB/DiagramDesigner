@@ -91,6 +91,8 @@ const TYPE_MAP = {
     }
 };
 
+// Тип из редактора переводим в конкретный SQL-диалект, сохраняя явно заданные
+// пользователем параметры вроде VARCHAR(120) или DECIMAL(12,4).
 function normalizeType(type, dialect) {
     const clean = String(type || "TEXT").trim().toUpperCase();
     const typeMatch = clean.match(/^([A-Z][A-Z0-9_ ]*?)(\s*\(([^)]*)\))?$/);
@@ -109,10 +111,12 @@ function normalizeType(type, dialect) {
     return mapped;
 }
 
+// Edges ссылаются на node id, а SQL generator пишет имена таблиц.
 function getTableNameById(nodes, id) {
     return nodes.find((node) => node.id === id)?.data?.name;
 }
 
+// Handle содержит id поля с техническим префиксом source/target.
 function getFieldByHandle(node, handleId) {
     if (!node || !handleId) {
         return null;
@@ -125,7 +129,16 @@ function getFieldByHandle(node, handleId) {
     return node.data.fields.find((field) => field.id === fieldId);
 }
 
-function formatRecordValue(value) {
+// Базовый тип без `(params)` нужен для специальных правил Records.
+function getBaseType(type) {
+    const clean = String(type || "TEXT").trim().toUpperCase();
+    const typeMatch = clean.match(/^([A-Z][A-Z0-9_ ]*?)(\s*\(([^)]*)\))?$/);
+
+    return typeMatch?.[1]?.trim() || clean;
+}
+
+// В DBML-like Records строки экранируются своим легким форматом.
+function formatDbmlRecordValue(value) {
     if (value === null || value === undefined) {
         return "null";
     }
@@ -137,6 +150,90 @@ function formatRecordValue(value) {
     return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
+// Для SQL string literal одинарная кавычка дублируется.
+function escapeSqlString(value) {
+    return String(value).replace(/'/g, "''");
+}
+
+// Отдельно распознаем DATE literal без времени.
+function isDateLiteral(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+// Editor хранит preview datetime строкой, поэтому pattern проверяем явно.
+function isDateTimeLiteral(value) {
+    return /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(value);
+}
+
+/**
+ * Дата и timestamp пишутся по-разному в диалектах: PostgreSQL и Oracle
+ * понимают typed literals, а MSSQL получает ISO-like datetime строку.
+ */
+function formatTemporalSqlValue(value, baseType, dialect) {
+    const normalized = String(value).replace("T", " ");
+
+    if (baseType === "DATE" && isDateLiteral(normalized)) {
+        if (dialect === "postgresql" || dialect === "oracle") {
+            return `DATE '${escapeSqlString(normalized)}'`;
+        }
+
+        return `'${escapeSqlString(normalized)}'`;
+    }
+
+    if (
+        ["DATETIME", "DATETIME2", "TIMESTAMP", "TIMESTAMPTZ"].includes(baseType)
+        && isDateTimeLiteral(normalized)
+    ) {
+        if (dialect === "postgresql" || dialect === "oracle") {
+            return `TIMESTAMP '${escapeSqlString(normalized)}'`;
+        }
+
+        if (dialect === "mssql") {
+            return `'${escapeSqlString(normalized.replace(" ", "T"))}'`;
+        }
+
+        return `'${escapeSqlString(normalized)}'`;
+    }
+
+    return `'${escapeSqlString(value)}'`;
+}
+
+/**
+ * Преобразуем значение Records в SQL literal с учетом типа поля и dialect.
+ * Здесь сходятся null, boolean, даты, объекты JSON и обычные строки.
+ */
+function formatSqlRecordValue(value, field, dialect) {
+    if (value === null || value === undefined) {
+        return "NULL";
+    }
+
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? String(value) : "NULL";
+    }
+
+    if (typeof value === "boolean") {
+        if (dialect === "mssql" || dialect === "oracle") {
+            return value ? "1" : "0";
+        }
+
+        return value ? "TRUE" : "FALSE";
+    }
+
+    if (Array.isArray(value) || (typeof value === "object" && value !== null)) {
+        return `'${escapeSqlString(JSON.stringify(value))}'`;
+    }
+
+    const stringValue = String(value);
+    const baseType = getBaseType(field?.type);
+
+    if (["DATE", "DATETIME", "DATETIME2", "TIMESTAMP", "TIMESTAMPTZ"].includes(baseType)) {
+        return formatTemporalSqlValue(stringValue, baseType, dialect);
+    }
+
+    return `'${escapeSqlString(stringValue)}'`;
+}
+
+// Имена таблиц, колонок и индексов цитируются правилами выбранной СУБД.
 function quoteIdentifier(identifier, dialect) {
     const clean = String(identifier || "unnamed")
         .trim()
@@ -153,6 +250,7 @@ function quoteIdentifier(identifier, dialect) {
     return `"${clean.replace(/"/g, "\"\"")}"`;
 }
 
+// Пустому имени индекса даем стабильный читаемый fallback для экспорта.
 function buildIndexName(tableName, indexItem, indexNumber) {
     const columns = Array.isArray(indexItem.columns) ? indexItem.columns : [];
     const fallback = `idx_${tableName}_${columns.join("_") || indexNumber}`;
@@ -162,8 +260,169 @@ function buildIndexName(tableName, indexItem, indexNumber) {
         .replace(/\s+/g, "_");
 }
 
+// Сравниваем состав индекса по порядку колонок.
+function sameColumnList(left, right) {
+    return left.length === right.length
+        && left.every((column, index) => column === right[index]);
+}
+
+// Не дублируем индекс, который уже покрыт primary key или unique field.
+function isRedundantIndex(table, indexItem, columns) {
+    const primaryKeys = table.fields
+        .filter((field) => field.pk)
+        .map((field) => field.name);
+
+    if (columns.length > 0 && sameColumnList(columns, primaryKeys)) {
+        return true;
+    }
+
+    if (columns.length !== 1) {
+        return false;
+    }
+
+    const field = table.fields.find((item) => item.name === columns[0]);
+
+    if (!field) {
+        return false;
+    }
+
+    if (field.pk) {
+        return true;
+    }
+
+    return Boolean(indexItem.unique && field.unique);
+}
+
+// Родительские таблицы идут раньше FK-таблиц, чтобы экспорт было проще выполнять в чистой БД.
+/**
+ * INSERT и CREATE TABLE удобнее выводить от родителей к зависимым таблицам.
+ * Для циклов сохраняем оставшиеся таблицы в исходном порядке.
+ */
+function sortTableNodesByDependencies(tableNodes, edges) {
+    const nodesById = new Map(tableNodes.map((node) => [node.id, node]));
+    const adjacency = new Map();
+    const indegree = new Map();
+
+    // Готовим graph dependency: каждая таблица начинает с нулевого числа родителей.
+    tableNodes.forEach((node) => {
+        adjacency.set(node.id, new Set());
+        indegree.set(node.id, 0);
+    });
+
+    // Edge идет от referenced table к таблице с FK, значит target зависит от source.
+    edges.forEach((edge) => {
+        if (!nodesById.has(edge.source) || !nodesById.has(edge.target)) {
+            return;
+        }
+
+        const sourceNeighbors = adjacency.get(edge.source);
+
+        if (!sourceNeighbors.has(edge.target)) {
+            sourceNeighbors.add(edge.target);
+            indegree.set(edge.target, (indegree.get(edge.target) || 0) + 1);
+        }
+    });
+
+    // Начинаем с таблиц без зависимостей и снимаем indegree у дочерних таблиц.
+    const queue = tableNodes
+        .filter((node) => (indegree.get(node.id) || 0) === 0);
+    const ordered = [];
+
+    while (queue.length > 0) {
+        const current = queue.shift();
+        ordered.push(current);
+
+        adjacency.get(current.id).forEach((neighborId) => {
+            const nextIndegree = (indegree.get(neighborId) || 0) - 1;
+            indegree.set(neighborId, nextIndegree);
+
+            if (nextIndegree === 0) {
+                queue.push(nodesById.get(neighborId));
+            }
+        });
+    }
+
+    if (ordered.length === tableNodes.length) {
+        return ordered;
+    }
+
+    // Циклические FK не имеют полного topological order, но экспорт все равно должен вернуть DDL.
+    const orderedIds = new Set(ordered.map((node) => node.id));
+
+    return [
+        ...ordered,
+        ...tableNodes.filter((node) => !orderedIds.has(node.id))
+    ];
+}
+
+/**
+ * Преобразует preview-records таблицы в INSERT.
+ * Колонки без соответствующего поля пропускаются, чтобы старый snapshot не ломал экспорт.
+ */
+// Preview Records превращаются в INSERT, только если есть колонки и строки.
+function buildInsertStatements(node, dialect) {
+    const table = node.data;
+    const records = table.records;
+    const columns = Array.isArray(records?.columns) ? records.columns : [];
+    const rows = Array.isArray(records?.rows) ? records.rows : [];
+
+    if (columns.length === 0 || rows.length === 0) {
+        return [];
+    }
+
+    // Records может пережить удаление поля, поэтому сперва отбрасываем устаревшие колонки.
+    const fieldsByName = new Map(table.fields.map((field) => [field.name, field]));
+    const validColumns = columns
+        .map((column, index) => ({ column, index }))
+        .filter(({ column }) => fieldsByName.has(column));
+
+    if (validColumns.length === 0) {
+        return [];
+    }
+
+    const tableName = quoteIdentifier(table.name, dialect);
+    const columnList = validColumns
+        .map(({ column }) => quoteIdentifier(column, dialect))
+        .join(", ");
+    const insertStatements = rows.map((row) => {
+        const values = validColumns.map(({ column, index }) => {
+            const field = fieldsByName.get(column);
+            const rawValue = Array.isArray(row) ? row[index] : null;
+
+            return formatSqlRecordValue(rawValue, field, dialect);
+        });
+
+        return `INSERT INTO ${tableName} (${columnList}) VALUES (${values.join(", ")});`;
+    });
+    // SQL Server запрещает явный INSERT в IDENTITY без отдельного переключателя.
+    const usesIdentityInsert = dialect === "mssql"
+        && validColumns.some(({ column }) => normalizeType(fieldsByName.get(column)?.type, dialect).includes("IDENTITY"));
+
+    if (!usesIdentityInsert) {
+        return insertStatements;
+    }
+
+    return [
+        `SET IDENTITY_INSERT ${tableName} ON;`,
+        ...insertStatements,
+        `SET IDENTITY_INSERT ${tableName} OFF;`
+    ];
+}
+
+/**
+ * Генерирует исполняемый SQL из canvas-схемы:
+ * CREATE TABLE сначала, затем демо-записи и отдельные CREATE INDEX.
+ */
+/**
+ * Основной SQL export собирает таблицы, ограничения, индексы и Records
+ * в скрипт выбранного диалекта.
+ */
 export function generateSQL(nodes, edges, dialect = "postgresql") {
-    const tableStatements = nodes.map((node) => {
+    const tableNodes = nodes.filter((node) => Array.isArray(node.data?.fields));
+    const orderedTableNodes = sortTableNodesByDependencies(tableNodes, edges);
+
+    // Первая секция экспорта описывает структуру таблиц.
+    const tableStatements = orderedTableNodes.map((node) => {
         const table = node.data;
         const primaryKeys = table.fields.filter((field) => field.pk).map((field) => field.name);
         const tableName = quoteIdentifier(table.name, dialect);
@@ -189,11 +448,12 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
             columns.push(`  PRIMARY KEY (${primaryKeys.map((fieldName) => quoteIdentifier(fieldName, dialect)).join(", ")})`);
         }
 
+        // FK записываем в target-таблицу, потому что target field хранит внешний ключ.
         const foreignKeys = edges
             .filter((edge) => edge.target === node.id)
             .map((edge) => {
-                const sourceNode = nodes.find((item) => item.id === edge.source);
-                const targetNode = nodes.find((item) => item.id === edge.target);
+                const sourceNode = tableNodes.find((item) => item.id === edge.source);
+                const targetNode = tableNodes.find((item) => item.id === edge.target);
 
                 const sourceField = getFieldByHandle(sourceNode, edge.sourceHandle);
                 const targetField = getFieldByHandle(targetNode, edge.targetHandle);
@@ -202,7 +462,7 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
                     return null;
                 }
 
-                const sourceTableName = getTableNameById(nodes, edge.source);
+                const sourceTableName = getTableNameById(tableNodes, edge.source);
 
                 return `  FOREIGN KEY (${quoteIdentifier(targetField.name, dialect)}) REFERENCES ${quoteIdentifier(sourceTableName, dialect)}(${quoteIdentifier(sourceField.name, dialect)})`;
             })
@@ -213,7 +473,11 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
         return `CREATE TABLE ${tableName} (\n${columns.join(",\n")}\n);`;
     });
 
-    const indexStatements = nodes.flatMap((node) => {
+    // Демо-записи идут после DDL, когда все таблицы уже объявлены.
+    const insertStatements = orderedTableNodes.flatMap((node) => buildInsertStatements(node, dialect));
+
+    // Индексы держим отдельной секцией и не дублируем PK/unique-индексы самих полей.
+    const indexStatements = orderedTableNodes.flatMap((node) => {
         const table = node.data;
         const indexes = Array.isArray(table.indexes) ? table.indexes : [];
 
@@ -227,6 +491,10 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
                     return "";
                 }
 
+                if (isRedundantIndex(table, indexItem, columns)) {
+                    return "";
+                }
+
                 const unique = indexItem.unique ? "UNIQUE " : "";
                 const indexName = buildIndexName(table.name, indexItem, indexNumber + 1);
 
@@ -235,11 +503,22 @@ export function generateSQL(nodes, edges, dialect = "postgresql") {
             .filter(Boolean);
     });
 
-    return [...tableStatements, ...indexStatements].join("\n\n");
+    return [...tableStatements, ...insertStatements, ...indexStatements].join("\n\n");
 }
 
+/**
+ * Возвращает текст, который видит встроенный DBML-like редактор.
+ * Он является человекочитаемым представлением того же React Flow snapshot.
+ */
+/**
+ * DBML-like export возвращает текстовый источник editor: Table, Indexes,
+ * Records и Ref строки на основе текущего canvas snapshot.
+ */
 export function generateDBML(nodes, edges) {
-    const tableBlocks = nodes.map((node) => {
+    const tableNodes = nodes.filter((node) => Array.isArray(node.data?.fields));
+
+    // Table-блоки содержат поля и вложенные Indexes, которые редактируются человеком.
+    const tableBlocks = tableNodes.map((node) => {
         const lines = node.data.fields.map((field) => {
             const flags = [];
 
@@ -255,10 +534,14 @@ export function generateDBML(nodes, edges) {
         const indexLines = indexes
             .map((indexItem, indexNumber) => {
                 const columns = Array.isArray(indexItem.columns)
-                    ? indexItem.columns.filter(Boolean)
+                    ? indexItem.columns.filter((column) => node.data.fields.some((field) => field.name === column))
                     : [];
 
                 if (columns.length === 0) {
+                    return "";
+                }
+
+                if (isRedundantIndex(node.data, indexItem, columns)) {
                     return "";
                 }
 
@@ -277,9 +560,10 @@ export function generateDBML(nodes, edges) {
         return `Table ${node.data.name} {\n${lines.join("\n")}\n}`;
     });
 
+    // После таблиц выводим Ref по именам, чтобы связь можно было поправить текстом.
     const relationLines = edges.map((edge) => {
-        const sourceNode = nodes.find((node) => node.id === edge.source);
-        const targetNode = nodes.find((node) => node.id === edge.target);
+        const sourceNode = tableNodes.find((node) => node.id === edge.source);
+        const targetNode = tableNodes.find((node) => node.id === edge.target);
 
         const sourceField = getFieldByHandle(sourceNode, edge.sourceHandle);
         const targetField = getFieldByHandle(targetNode, edge.targetHandle);
@@ -293,7 +577,8 @@ export function generateDBML(nodes, edges) {
         return `Ref ${type}: ${sourceNode.data.name}.${sourceField.name} > ${targetNode.data.name}.${targetField.name}`;
     }).filter(Boolean);
 
-    const recordBlocks = nodes
+    // Records остаются отдельными блоками и не смешиваются с описанием структуры таблицы.
+    const recordBlocks = tableNodes
         .map((node) => {
             const records = node.data.records;
             const columns = Array.isArray(records?.columns) ? records.columns : [];
@@ -306,7 +591,7 @@ export function generateDBML(nodes, edges) {
             const rowLines = rows.map((row) => {
                 const values = Array.isArray(row) ? row : [];
 
-                return `  ${values.map(formatRecordValue).join(", ")}`;
+                return `  ${values.map(formatDbmlRecordValue).join(", ")}`;
             });
 
             return `Records ${node.data.name}(${columns.join(", ")}) {\n${rowLines.join("\n")}\n}`;

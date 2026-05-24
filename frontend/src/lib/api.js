@@ -2,10 +2,13 @@ const API_URL = import.meta.env.VITE_API_URL || "";
 const TOKEN_KEY = "db-schema-designer-token";
 const USER_KEY = "db-schema-designer-user";
 
+// Один формат ошибки позволяет UI читать status, message и сырые details
+// независимо от конкретного endpoint.
 function createApiError(message, status, details = {}) {
     return Object.assign(new Error(message), { status, details });
 }
 
+// AI endpoint присылает расширенную диагностику, а UI выводит ее отдельным блоком.
 export function getApiErrorDetails(error) {
     const details = error?.details?.error;
 
@@ -26,10 +29,12 @@ export function getApiErrorDetails(error) {
     return lines.join("\n");
 }
 
+// Токен хранится отдельно от пользователя, чтобы Bearer header брать быстро.
 export function getAuthToken() {
     return localStorage.getItem(TOKEN_KEY);
 }
 
+// Пользователь в localStorage нужен шапкам до запроса `/api/me`.
 export function getStoredUser() {
     const raw = localStorage.getItem(USER_KEY);
 
@@ -44,6 +49,7 @@ export function getStoredUser() {
     }
 }
 
+// Login, register и обновление профиля используют один способ обновить сессию.
 export function setAuthSession({ token, user }) {
     if (token) {
         localStorage.setItem(TOKEN_KEY, token);
@@ -54,15 +60,18 @@ export function setAuthSession({ token, user }) {
     }
 }
 
+// Удаляем оба ключа, чтобы интерфейс не считал профиль авторизованным по кэшу.
 export function clearAuthSession() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
 }
 
+// Для интерфейса признак сессии сейчас равен наличию Bearer token.
 export function isAuthenticated() {
     return Boolean(getAuthToken());
 }
 
+// Один fetch-wrapper отвечает за Bearer token, Laravel validation errors и сброс битой сессии.
 async function request(path, options = {}) {
     const {
         method = "GET",
@@ -94,9 +103,11 @@ async function request(path, options = {}) {
 
     if (!response.ok) {
         if (response.status === 401) {
+            // Токен больше не годится, значит frontend не должен продолжать считать сессию живой.
             clearAuthSession();
         }
 
+        // Laravel Form Request возвращает errors по полям, форме удобнее первая причина.
         const validationMessage = payload?.errors
             ? Object.values(payload.errors).flat().filter(Boolean)[0]
             : null;
@@ -111,6 +122,7 @@ async function request(path, options = {}) {
     return payload;
 }
 
+// Auth endpoints возвращают `data` с token и user, поэтому сохраняют сессию тут.
 export async function register(data) {
     const payload = await request("/api/register", {
         method: "POST",
@@ -123,6 +135,7 @@ export async function register(data) {
     return payload.data;
 }
 
+// Вход повторяет форму регистрации по shape результата.
 export async function login(data) {
     const payload = await request("/api/login", {
         method: "POST",
@@ -135,6 +148,7 @@ export async function login(data) {
     return payload.data;
 }
 
+// Даже если logout route не ответит, локальный token больше использовать нельзя.
 export async function logout() {
     try {
         await request("/api/logout", { method: "POST" });
@@ -143,6 +157,7 @@ export async function logout() {
     }
 }
 
+// `/api/me` проверяет жив ли токен и освежает кэш пользователя.
 export async function fetchSession(signal) {
     if (!getAuthToken()) {
         return null;
@@ -154,6 +169,7 @@ export async function fetchSession(signal) {
     return payload.data;
 }
 
+// После изменения профиля обновляем тот же кэш, что читают ProfileButton и header.
 export async function updateProfile(data) {
     const payload = await request("/api/me", {
         method: "PATCH",
@@ -165,16 +181,19 @@ export async function updateProfile(data) {
     return payload.data;
 }
 
+// Список проектов распаковываем до массива, потому что карточкам не нужен wrapper.
 export async function listProjects(signal) {
     const payload = await request("/api/projects", { signal });
 
     return payload.data;
 }
 
+// Полный проект возвращает schema_code и schema_json для editor.
 export async function getProject(projectId, signal) {
     return request(`/api/projects/${projectId}`, { signal });
 }
 
+// Создание проекта может отправить только метаданные или стартовый snapshot.
 export async function createProject(project) {
     return request("/api/projects", {
         method: "POST",
@@ -182,6 +201,7 @@ export async function createProject(project) {
     });
 }
 
+// Editor обычно делает PATCH, но форма настроек может переиспользовать helper.
 export async function updateProject(projectId, project, method = "PATCH") {
     return request(`/api/projects/${projectId}`, {
         method,
@@ -189,6 +209,7 @@ export async function updateProject(projectId, project, method = "PATCH") {
     });
 }
 
+// DELETE возвращает короткое message, его и отдаем вызывающей странице.
 export async function deleteProject(projectId) {
     const payload = await request(`/api/projects/${projectId}`, {
         method: "DELETE"
@@ -197,6 +218,7 @@ export async function deleteProject(projectId) {
     return payload.message;
 }
 
+// Участник удаляет у себя командный проект отдельным endpoint.
 export async function leaveProject(projectId) {
     const payload = await request(`/api/projects/${projectId}/leave`, {
         method: "DELETE"
@@ -205,6 +227,7 @@ export async function leaveProject(projectId) {
     return payload.message;
 }
 
+// Владелец исключает конкретного участника из team списка.
 export async function removeProjectViewer(projectId, viewerId) {
     const payload = await request(`/api/projects/${projectId}/team/${viewerId}`, {
         method: "DELETE"
@@ -213,6 +236,7 @@ export async function removeProjectViewer(projectId, viewerId) {
     return payload.message;
 }
 
+// Права участника меняются отдельно от публичной ссылки проекта.
 export async function updateProjectViewerPermission(projectId, viewerId, permission) {
     return request(`/api/projects/${projectId}/team/${viewerId}`, {
         method: "PATCH",
@@ -220,12 +244,14 @@ export async function updateProjectViewerPermission(projectId, viewerId, permiss
     });
 }
 
+// Duplicate создает новый проект владельца на основе существующего snapshot.
 export async function duplicateProject(projectId) {
     return request(`/api/projects/${projectId}/duplicate`, {
         method: "POST"
     });
 }
 
+// Если новое значение не передано, backend сам переключит текущее состояние.
 export async function toggleProjectFavorite(projectId, isFavorite) {
     return request(`/api/projects/${projectId}/favorite`, {
         method: "PATCH",
@@ -233,16 +259,19 @@ export async function toggleProjectFavorite(projectId, isFavorite) {
     });
 }
 
+// last_opened_at нужен сортировке и отметке недавних проектов.
 export async function markProjectOpened(projectId) {
     return request(`/api/projects/${projectId}/last-opened`, {
         method: "PATCH"
     });
 }
 
+// Настройки шаринга доступны владельцу из редактора и страницы проектов.
 export async function getProjectShare(projectId, signal) {
     return request(`/api/projects/${projectId}/share`, { signal });
 }
 
+// Access mode, password и permission публичной ссылки обновляются одним payload.
 export async function updateProjectShare(projectId, data) {
     return request(`/api/projects/${projectId}/share`, {
         method: "PATCH",
@@ -250,6 +279,7 @@ export async function updateProjectShare(projectId, data) {
     });
 }
 
+// Shared route может увидеть авторизованного зрителя и прикрепить его к проекту.
 export async function getSharedProject(token, signal) {
     return request(`/api/shared-projects/${token}`, {
         auth: true,
@@ -257,6 +287,7 @@ export async function getSharedProject(token, signal) {
     });
 }
 
+// Пароль ссылки проверяется отдельно до показа закрытой схемы.
 export async function unlockSharedProject(token, password) {
     return request(`/api/shared-projects/${token}/unlock`, {
         method: "POST",
@@ -265,6 +296,7 @@ export async function unlockSharedProject(token, password) {
     });
 }
 
+// Для редактируемой ссылки пароль повторно прикладываем при сохранении правок.
 export async function updateSharedProject(token, project, password = "") {
     return request(`/api/shared-projects/${token}`, {
         method: "PATCH",
@@ -273,6 +305,7 @@ export async function updateSharedProject(token, project, password = "") {
     });
 }
 
+// UI AI-панели получает только полезную часть `data`, без HTTP envelope.
 export async function askSchemaAssistant(payload) {
     const response = await request("/api/ai/schema-assistant", {
         method: "POST",
@@ -282,6 +315,7 @@ export async function askSchemaAssistant(payload) {
     return response.data;
 }
 
+// Network TypeError превращаем в подсказку про Laravel/Vite proxy.
 export function getApiErrorMessage(error, fallback = "Unexpected error.") {
     if (error instanceof TypeError) {
         return "Не удалось подключиться к API. Проверьте, что Laravel запущен на http://127.0.0.1:8000 и работает Vite proxy.";

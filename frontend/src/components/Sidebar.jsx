@@ -1,6 +1,10 @@
 import { Link } from "react-router-dom";
 import { BookOpen, MousePointer2, Plus, Trash2 } from "lucide-react";
 
+/**
+ * Компактная панель инструментов canvas. Она не меняет схему напрямую,
+ * а вызывает команды редактора, который владеет nodes и edges.
+ */
 export default function Sidebar({
                                     onAddTable,
                                     onDeleteSelected,
