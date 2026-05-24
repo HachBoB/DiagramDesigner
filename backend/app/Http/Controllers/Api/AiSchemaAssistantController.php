@@ -8,8 +8,14 @@ use App\Services\Ai\NvidiaNimService;
 use Illuminate\Http\JsonResponse;
 use Throwable;
 
+/**
+ * Тонкий HTTP-слой над AI-сервисом: валидирует payload и приводит ошибки провайдера к JSON API.
+ */
 class AiSchemaAssistantController extends Controller
 {
+    /**
+     * Даем запросу к внешней модели чуть больше времени, чем обычному PHP endpoint.
+     */
     public function __invoke(SchemaAssistantRequest $request, NvidiaNimService $nvidiaNim): JsonResponse
     {
         @set_time_limit((int) config('services.nvidia_nim.execution_time_limit', 60));
@@ -19,12 +25,16 @@ class AiSchemaAssistantController extends Controller
                 'data' => $nvidiaNim->analyzeSchema($request->validated()),
             ]);
         } catch (Throwable $exception) {
+            // В журнал уходит полный Throwable, а frontend получает контролируемую диагностику.
             report($exception);
 
             return response()->json($this->errorPayload($exception), 502);
         }
     }
 
+    /**
+     * Собирает диагностический ответ для UI, но путь к файлу отдает только в debug-режиме.
+     */
     private function errorPayload(Throwable $exception): array
     {
         $payload = [

@@ -12,8 +12,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Выдает frontend-приложению токены Sanctum и отвечает за данные профиля.
+ */
 class AuthController extends Controller
 {
+    /**
+     * Создает пользователя и сразу открывает сессию для React-клиента.
+     */
     public function register(RegisterRequest $request): JsonResponse
     {
         $user = User::create($request->validated());
@@ -26,11 +32,15 @@ class AuthController extends Controller
         ], 201);
     }
 
+    /**
+     * Проверяет пароль вручную, чтобы вернуть токен в том же формате, что и при регистрации.
+     */
     public function login(LoginRequest $request): JsonResponse
     {
         $credentials = $request->validated();
         $user = User::where('email', $credentials['email'])->first();
 
+        // Ошибка привязана к email, чтобы Laravel вернул привычный validation payload для формы.
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
@@ -45,6 +55,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Удаляет только текущий access token, не разлогинивая остальные устройства пользователя.
+     */
     public function logout(Request $request): JsonResponse
     {
         $token = $request->user()->currentAccessToken();
@@ -58,6 +71,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Возвращает данные текущего пользователя без чувствительных полей модели.
+     */
     public function me(Request $request): JsonResponse
     {
         return response()->json([
@@ -65,12 +81,16 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Обновляет профиль и требует старый пароль только когда пользователь меняет пароль.
+     */
     public function update(UpdateProfileRequest $request): JsonResponse
     {
         $user = $request->user();
         $data = $request->validated();
 
         if (filled($data['password'] ?? null)) {
+            // Без current_password смена пароля через украденную сессию была бы слишком простой.
             if (! Hash::check($data['current_password'] ?? '', $user->password)) {
                 throw ValidationException::withMessages([
                     'current_password' => ['Текущий пароль указан неверно.'],
@@ -89,6 +109,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Держит форму ответа одинаковой для register, login, me и update.
+     */
     private function userPayload(User $user): array
     {
         return [

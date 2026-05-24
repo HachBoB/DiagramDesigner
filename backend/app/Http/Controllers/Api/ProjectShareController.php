@@ -13,8 +13,14 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Настройки ссылки проекта и управление участниками со стороны владельца.
+ */
 class ProjectShareController extends Controller
 {
+    /**
+     * Экран настроек доступа должен видеть парольный режим и список viewers только у владельца.
+     */
     public function show(Request $request, Project $project): ProjectShareResource
     {
         $this->ensureOwnsProject($request, $project);
@@ -24,6 +30,9 @@ class ProjectShareController extends Controller
         );
     }
 
+    /**
+     * Переключает проект между private, обычной ссылкой и ссылкой с паролем.
+     */
     public function update(ShareProjectRequest $request, Project $project): ProjectShareResource
     {
         $this->ensureOwnsProject($request, $project);
@@ -31,6 +40,7 @@ class ProjectShareController extends Controller
         $data = $request->validated();
         $access = $data['access'];
 
+        // Private выключает существующую ссылку полностью, даже если token уже был у кого-то.
         if ($access === 'private') {
             $project->forceFill([
                 'share_access' => 'private',
@@ -43,12 +53,14 @@ class ProjectShareController extends Controller
             return ProjectShareResource::make($project->refresh()->load(['user', 'viewers']));
         }
 
+        // При повторном сохранении настроек старая ссылка остается прежней.
         $project->share_token ??= $this->newShareToken();
         $project->share_access = $access;
         $project->share_permission = $data['permission'] ?? 'view';
         $project->shared_at ??= now();
 
         if ($access === 'password') {
+            // Новый пароль хешируем, а при пустом поле оставляем ранее заданный пароль.
             if (filled($data['password'] ?? null)) {
                 $project->share_password_hash = Hash::make($data['password']);
             } elseif (! $project->share_password_hash) {
@@ -65,10 +77,14 @@ class ProjectShareController extends Controller
         return ProjectShareResource::make($project->refresh()->load(['user', 'viewers']));
     }
 
+    /**
+     * Участник удаляет только свою запись viewer и теряет проект в списке командных.
+     */
     public function leave(Request $request, Project $project): JsonResponse
     {
         abort_unless($project->user_id !== $request->user()->id, 403);
 
+        // Выход из команды не меняет сам shared project и не трогает других участников.
         $deleted = $project->viewers()
             ->where('user_id', $request->user()->id)
             ->delete();
@@ -80,6 +96,9 @@ class ProjectShareController extends Controller
         ]);
     }
 
+    /**
+     * Владелец удаляет конкретного участника только из своего проекта.
+     */
     public function removeViewer(Request $request, Project $project, ProjectViewer $viewer): JsonResponse
     {
         $this->ensureOwnsProject($request, $project);
@@ -92,6 +111,9 @@ class ProjectShareController extends Controller
         ]);
     }
 
+    /**
+     * Права можно выдать только viewer с аккаунтом: гость не имеет постоянного пользователя.
+     */
     public function updateViewerPermission(Request $request, Project $project, ProjectViewer $viewer): ProjectShareResource
     {
         $this->ensureOwnsProject($request, $project);
@@ -102,6 +124,7 @@ class ProjectShareController extends Controller
             'permission' => ['required', 'string', 'in:view,edit'],
         ]);
 
+        // Меняем персональное право viewer, не дефолтный permission ссылки.
         $viewer->update([
             'permission' => $data['permission'],
         ]);
@@ -109,11 +132,17 @@ class ProjectShareController extends Controller
         return ProjectShareResource::make($project->refresh()->load(['user', 'viewers']));
     }
 
+    /**
+     * Настройки доступа не раскрываются по id чужого проекта.
+     */
     private function ensureOwnsProject(Request $request, Project $project): void
     {
         abort_unless($project->user_id === $request->user()->id, 404);
     }
 
+    /**
+     * Токен ссылки генерируем с проверкой уникальности, чтобы URL не столкнулись.
+     */
     private function newShareToken(): string
     {
         do {

@@ -2,10 +2,17 @@
 
 namespace App\Services;
 
+/**
+ * Держит стартовую схему в JSON и DBML-like виде, чтобы backend мог создать полноценный проект.
+ */
 class DefaultSchemaService
 {
+    /**
+     * Возвращает snapshot в точной форме, которую React Flow и frontend resources уже умеют читать.
+     */
     public function schemaJson(): array
     {
+        // Таблицы описываем компактно, а ниже превращаем их в React Flow nodes.
         $tables = [
             'users' => [
                 'position' => ['x' => 420, 'y' => 80],
@@ -113,6 +120,7 @@ class DefaultSchemaService
         ];
 
         return [
+            // Frontend ожидает handle id полей внутри edges, поэтому ids таблиц и полей фиксированы.
             'nodes' => array_map(fn (string $name, array $table): array => [
                 'id' => $name,
                 'type' => 'tableNode',
@@ -136,6 +144,9 @@ class DefaultSchemaService
         ];
     }
 
+    /**
+     * Текстовая версия стартовой схемы синхронизирована с JSON snapshot для code editor.
+     */
     public function schemaCode(): string
     {
         return <<<'DBML'
@@ -211,6 +222,9 @@ Records order_items(id, order_id, product_id, quantity) {
 DBML;
     }
 
+    /**
+     * Handle поля хранится внутри edge, иначе линия связи не прикрепится к строке таблицы.
+     */
     private function edge(string $id, string $source, string $target, string $sourceField, string $targetField): array
     {
         return [

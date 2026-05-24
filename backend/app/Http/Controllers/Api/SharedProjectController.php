@@ -9,12 +9,19 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
+/**
+ * Публичный вход в проект по share token для гостей и авторизованных участников.
+ */
 class SharedProjectController extends Controller
 {
+    /**
+     * Парольную ссылку сначала открываем в режиме challenge, не отдавая саму схему.
+     */
     public function show(Request $request, string $token): JsonResponse|ProjectResource
     {
         $project = $this->findSharedProject($token);
 
+        // До проверки пароля frontend получает только challenge и краткую подпись проекта.
         if ($project->share_access === 'password' && ! $this->hasStoredAccess($request, $project)) {
             return response()->json([
                 'password_required' => true,
@@ -30,6 +37,9 @@ class SharedProjectController extends Controller
         return ProjectResource::make($this->withAccessMeta($request, $project));
     }
 
+    /**
+     * После верного пароля сохраняем viewer, чтобы зарегистрированный пользователь видел проект в списке.
+     */
     public function unlock(Request $request, string $token): ProjectResource
     {
         $project = $this->findSharedProject($token);
@@ -40,6 +50,7 @@ class SharedProjectController extends Controller
             'password' => ['required', 'string'],
         ]);
 
+        // Пароль проверяем до trackViewer, чтобы неверная попытка не попала в команду.
         abort_unless(
             $project->share_password_hash && Hash::check($data['password'], $project->share_password_hash),
             403,
@@ -51,6 +62,9 @@ class SharedProjectController extends Controller
         return ProjectResource::make($this->withAccessMeta($request, $project));
     }
 
+    /**
+     * Запись по ссылке разрешена только ссылкам с edit или viewer с персональным edit.
+     */
     public function update(Request $request, string $token): ProjectResource
     {
         $project = $this->findSharedProject($token);
@@ -58,6 +72,7 @@ class SharedProjectController extends Controller
         abort_unless($this->canEdit($request, $project), 403, 'У вас нет прав на редактирование этого проекта.');
 
         if ($project->share_access === 'password') {
+            // Для password-link пароль нужен и на сохранение, не только на первое открытие.
             $data = $request->validate([
                 'password' => ['required', 'string'],
                 'name' => ['sometimes', 'string', 'max:255'],
@@ -82,12 +97,16 @@ class SharedProjectController extends Controller
             ]);
         }
 
+        // Сохраняем ту же project-модель, что редактирует владелец в обычном editor route.
         $project->update($data);
         $this->trackViewer($request, $project);
 
         return ProjectResource::make($this->withAccessMeta($request, $project->refresh()));
     }
 
+    /**
+     * Ищем только активные ссылки, чтобы приватный проект не открывался по старому токену.
+     */
     private function findSharedProject(string $token): Project
     {
         $project = Project::query()
@@ -101,6 +120,9 @@ class SharedProjectController extends Controller
         return $project;
     }
 
+    /**
+     * Для вошедшего пользователя доступ к парольной ссылке уже хранится в viewers.
+     */
     private function hasStoredAccess(Request $request, Project $project): bool
     {
         $user = auth('sanctum')->user();
@@ -111,15 +133,20 @@ class SharedProjectController extends Controller
                 ->exists();
     }
 
+    /**
+     * Персональное право viewer сильнее дефолтного права самой share-ссылки.
+     */
     private function canEdit(Request $request, Project $project): bool
     {
         $user = auth('sanctum')->user();
 
+        // Владелец всегда редактирует проект независимо от настроек share link.
         if ($user?->id === $project->user_id) {
             return true;
         }
 
         if ($user) {
+            // У вошедшего viewer персональный permission перекрывает дефолт ссылки.
             $viewer = $project->viewers()
                 ->where('user_id', $user->id)
                 ->first();
@@ -132,6 +159,9 @@ class SharedProjectController extends Controller
         return $project->share_permission === 'edit';
     }
 
+    /**
+     * Возвращает право, которое frontend покажет рядом с ролью участника.
+     */
     private function viewerPermission(Request $request, Project $project): string
     {
         $user = auth('sanctum')->user();
@@ -149,6 +179,9 @@ class SharedProjectController extends Controller
             ->value('permission') ?? ($project->share_permission ?? 'view');
     }
 
+    /**
+     * Добавляет runtime-meta для общего ProjectResource без отдельного формата shared-проекта.
+     */
     private function withAccessMeta(Request $request, Project $project): Project
     {
         $permission = $this->viewerPermission($request, $project);
@@ -161,6 +194,9 @@ class SharedProjectController extends Controller
         return $project;
     }
 
+    /**
+     * Авторизованные участники привязываются к user_id, гости получают стабильный fingerprint viewer_key.
+     */
     private function trackViewer(Request $request, Project $project): void
     {
         $user = auth('sanctum')->user();
@@ -170,6 +206,7 @@ class SharedProjectController extends Controller
         }
 
         if ($user) {
+            // Зарегистрированный viewer потом увидит проект на странице "Мои проекты".
             $viewer = $project->viewers()->firstOrNew(['user_id' => $user->id]);
 
             if (! $viewer->exists) {
@@ -186,6 +223,7 @@ class SharedProjectController extends Controller
             return;
         }
 
+        // Гостю нужен повторяемый ключ, иначе каждый просмотр создал бы нового viewer.
         $viewerKey = hash('sha256', $request->ip().'|'.substr((string) $request->userAgent(), 0, 255));
 
         $viewer = $project->viewers()->firstOrNew(['viewer_key' => $viewerKey]);

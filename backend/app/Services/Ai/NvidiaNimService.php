@@ -7,8 +7,14 @@ use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
 
+/**
+ * Общается с OpenAI-compatible endpoint NVIDIA NIM для анализа и правок схемы.
+ */
 class NvidiaNimService
 {
+    /**
+     * Формирует chat completion и приводит ответ модели к контракту frontend-панели.
+     */
     public function analyzeSchema(array $payload): array
     {
         $apiKey = config('services.nvidia_nim.key');
@@ -18,6 +24,7 @@ class NvidiaNimService
             throw new RuntimeException('NVIDIA NIM API key is not configured.');
         }
 
+        // Таймауты вынесены в config, потому что hosted-модели NIM отвечают с разной скоростью.
         $request = Http::withToken($apiKey)
             ->acceptJson()
             ->connectTimeout(config('services.nvidia_nim.connect_timeout'))
@@ -28,6 +35,7 @@ class NvidiaNimService
         }
 
         try {
+            // NIM принимает OpenAI-compatible messages, поэтому prompt строится как chat completion.
             $response = $request->post($this->endpoint('/chat/completions'), [
                 'model' => config('services.nvidia_nim.model'),
                 'temperature' => 0.25,
@@ -53,6 +61,7 @@ class NvidiaNimService
         }
 
         try {
+            // HTTP-ошибку провайдера превращаем в RuntimeException с коротким телом ответа.
             $response->throw();
         } catch (RequestException $exception) {
             report($exception);
@@ -69,12 +78,14 @@ class NvidiaNimService
             ), previous: $exception);
         }
 
+        // Контракт OpenAI-compatible ответа кладет текст модели в choices[0].message.content.
         $content = data_get($response->json(), 'choices.0.message.content');
 
         if (! is_string($content) || trim($content) === '') {
             throw new RuntimeException('NVIDIA NIM returned an empty response.');
         }
 
+        // В edit-режиме frontend ждет не только текст, но и полную замену DBML-like кода.
         if ($mode === 'edit') {
             return [
                 ...$this->parseEditResponse($content),
@@ -93,6 +104,9 @@ class NvidiaNimService
         return rtrim((string) config('services.nvidia_nim.base_url'), '/').$path;
     }
 
+    /**
+     * Системный prompt разделяет режим совета и режим правок, чтобы модель не меняла код без запроса.
+     */
     private function systemPrompt(string $mode): string
     {
         if ($mode === 'edit') {
@@ -126,6 +140,9 @@ PROMPT;
 PROMPT;
     }
 
+    /**
+     * Ограничиваем контекст перед отправкой провайдеру, чтобы большая схема не раздула запрос.
+     */
     private function userPrompt(array $payload): string
     {
         $question = $payload['question'] ?? 'Проверь текущую схему и дай рекомендации.';
@@ -161,12 +178,16 @@ JSON-схема:
 PROMPT;
     }
 
+    /**
+     * NIM-модель иногда оборачивает JSON в markdown, поэтому извлекаем объект максимально терпимо.
+     */
     private function parseEditResponse(string $content): array
     {
         $json = trim($content);
         $json = preg_replace('/^```(?:json)?\s*/i', '', $json);
         $json = preg_replace('/\s*```$/', '', $json);
 
+        // Если модель добавила вводный текст, вырезаем крайний JSON object из ответа.
         if (! str_starts_with($json, '{')) {
             $start = strpos($json, '{');
             $end = strrpos($json, '}');
@@ -178,6 +199,7 @@ PROMPT;
 
         $decoded = json_decode($json, true);
 
+        // Невалидный JSON не скрываем: показываем пользователю обычный текст ответа без кнопки apply.
         if (! is_array($decoded)) {
             return [
                 'message' => trim($content),
@@ -187,6 +209,7 @@ PROMPT;
 
         $schemaCode = $decoded['schema_code'] ?? null;
 
+        // Применять можно только полный DBML-like код, а не произвольный фрагмент или SQL.
         if (! is_string($schemaCode) || ! str_contains($schemaCode, 'Table ')) {
             $schemaCode = null;
         }
