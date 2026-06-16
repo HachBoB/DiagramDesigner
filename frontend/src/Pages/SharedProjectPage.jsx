@@ -13,6 +13,7 @@ import { CheckCircle2, CloudOff, Database, Eye, EyeOff, FileJson, FileText, File
 
 import TableNode from "../nodes/TableNode.jsx";
 import StickyNoteNode from "../nodes/StickyNoteNode.jsx";
+import { createId } from "../utils/createId.js";
 import RecordsModal from "../components/RecordsModal.jsx";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import ProfileButton from "../components/ProfileButton.jsx";
@@ -48,7 +49,7 @@ const nodeTypes = {
 
 // Shared editor создает заметки в том же snapshot формате, что личный editor.
 function createStickyNote(position = { x: 180, y: 160 }) {
-    const noteId = `note-${crypto.randomUUID()}`;
+    const noteId = `note-${createId()}`;
 
     return {
         id: noteId,

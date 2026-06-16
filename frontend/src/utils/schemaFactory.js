@@ -1,4 +1,5 @@
 import { MarkerType } from "reactflow";
+import { createId } from "./createId.js";
 
 export const SCHEMA_PATTERNS = [
     {
@@ -83,7 +84,7 @@ export function normalizeSchemaSnapshot(schema, fallback = createEmptySchema()) 
 // Новое поле получает id сразу, потому что handles и React keys завязаны на него.
 export function createField(name = "field", type = "INTEGER") {
     return {
-        id: crypto.randomUUID(),
+        id: createId(),
         name,
         type,
         pk: false,
@@ -100,7 +101,7 @@ export function createIndex(columns = []) {
         : [];
 
     return {
-        id: crypto.randomUUID(),
+        id: createId(),
         name: "",
         columns: normalizedColumns,
         unique: false
@@ -112,7 +113,7 @@ export function createIndex(columns = []) {
  * есть node id, data.tableId, стартовый primary key и пустые Records/Indexes.
  */
 export function createTableNode(index = 1, position = { x: 200, y: 120 }) {
-    const tableId = crypto.randomUUID();
+    const tableId = createId();
 
     return {
         id: tableId,
@@ -147,7 +148,7 @@ export function createRelationEdge(
     relationType = "one-to-many"
 ) {
     return {
-        id: `edge-${crypto.randomUUID()}`,
+        id: `edge-${createId()}`,
         source,
         target,
         sourceHandle,
@@ -184,37 +185,37 @@ export function createRelationEdge(
  * ID генерируются заново для каждого проекта, иначе связи из разных snapshots могли бы пересечься.
  */
 export function createStarterSchema() {
-    const usersId = crypto.randomUUID();
-    const ordersId = crypto.randomUUID();
-    const productsId = crypto.randomUUID();
-    const orderItemsId = crypto.randomUUID();
+    const usersId = createId();
+    const ordersId = createId();
+    const productsId = createId();
+    const orderItemsId = createId();
 
     const usersFields = [
-        { id: crypto.randomUUID(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
-        { id: crypto.randomUUID(), name: "email", type: "VARCHAR", pk: false, fk: false, unique: true, nullable: false },
-        { id: crypto.randomUUID(), name: "name", type: "VARCHAR", pk: false, fk: false, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "created_at", type: "TIMESTAMP", pk: false, fk: false, unique: false, nullable: false }
+        { id: createId(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
+        { id: createId(), name: "email", type: "VARCHAR", pk: false, fk: false, unique: true, nullable: false },
+        { id: createId(), name: "name", type: "VARCHAR", pk: false, fk: false, unique: false, nullable: false },
+        { id: createId(), name: "created_at", type: "TIMESTAMP", pk: false, fk: false, unique: false, nullable: false }
     ];
 
     const ordersFields = [
-        { id: crypto.randomUUID(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
-        { id: crypto.randomUUID(), name: "user_id", type: "INTEGER", pk: false, fk: true, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "status", type: "VARCHAR", pk: false, fk: false, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "created_at", type: "TIMESTAMP", pk: false, fk: false, unique: false, nullable: false }
+        { id: createId(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
+        { id: createId(), name: "user_id", type: "INTEGER", pk: false, fk: true, unique: false, nullable: false },
+        { id: createId(), name: "status", type: "VARCHAR", pk: false, fk: false, unique: false, nullable: false },
+        { id: createId(), name: "created_at", type: "TIMESTAMP", pk: false, fk: false, unique: false, nullable: false }
     ];
 
     const productsFields = [
-        { id: crypto.randomUUID(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
-        { id: crypto.randomUUID(), name: "title", type: "VARCHAR", pk: false, fk: false, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "price", type: "DECIMAL", pk: false, fk: false, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "stock", type: "INTEGER", pk: false, fk: false, unique: false, nullable: false }
+        { id: createId(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
+        { id: createId(), name: "title", type: "VARCHAR", pk: false, fk: false, unique: false, nullable: false },
+        { id: createId(), name: "price", type: "DECIMAL", pk: false, fk: false, unique: false, nullable: false },
+        { id: createId(), name: "stock", type: "INTEGER", pk: false, fk: false, unique: false, nullable: false }
     ];
 
     const orderItemsFields = [
-        { id: crypto.randomUUID(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
-        { id: crypto.randomUUID(), name: "order_id", type: "INTEGER", pk: false, fk: true, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "product_id", type: "INTEGER", pk: false, fk: true, unique: false, nullable: false },
-        { id: crypto.randomUUID(), name: "quantity", type: "INTEGER", pk: false, fk: false, unique: false, nullable: false }
+        { id: createId(), name: "id", type: "SERIAL", pk: true, fk: false, unique: true, nullable: false },
+        { id: createId(), name: "order_id", type: "INTEGER", pk: false, fk: true, unique: false, nullable: false },
+        { id: createId(), name: "product_id", type: "INTEGER", pk: false, fk: true, unique: false, nullable: false },
+        { id: createId(), name: "quantity", type: "INTEGER", pk: false, fk: false, unique: false, nullable: false }
     ];
 
     const nodes = [
@@ -255,13 +256,13 @@ export function createStarterSchema() {
                 },
                 indexes: [
                     {
-                        id: crypto.randomUUID(),
+                        id: createId(),
                         name: "idx_orders_user_id",
                         columns: ["user_id"],
                         unique: false
                     },
                     {
-                        id: crypto.randomUUID(),
+                        id: createId(),
                         name: "idx_orders_status",
                         columns: ["status"],
                         unique: false
@@ -287,7 +288,7 @@ export function createStarterSchema() {
                 },
                 indexes: [
                     {
-                        id: crypto.randomUUID(),
+                        id: createId(),
                         name: "idx_products_title",
                         columns: ["title"],
                         unique: false
@@ -314,7 +315,7 @@ export function createStarterSchema() {
                 },
                 indexes: [
                     {
-                        id: crypto.randomUUID(),
+                        id: createId(),
                         name: "idx_order_items_order_product",
                         columns: ["order_id", "product_id"],
                         unique: false
@@ -357,7 +358,7 @@ export function createStarterSchema() {
 
 function createPatternField(name, type, options = {}) {
     return {
-        id: crypto.randomUUID(),
+        id: createId(),
         name,
         type,
         pk: false,
@@ -370,7 +371,7 @@ function createPatternField(name, type, options = {}) {
 
 function createPatternIndex(name, columns, unique = false) {
     return {
-        id: crypto.randomUUID(),
+        id: createId(),
         name,
         columns,
         unique
@@ -378,7 +379,7 @@ function createPatternIndex(name, columns, unique = false) {
 }
 
 function createPatternTable(name, position, fields, records = {}, indexes = []) {
-    const tableId = crypto.randomUUID();
+    const tableId = createId();
 
     return {
         id: tableId,

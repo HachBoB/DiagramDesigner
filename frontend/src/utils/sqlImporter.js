@@ -1,4 +1,5 @@
 import { createRelationEdge } from "./schemaFactory.js";
+import { createId } from "./createId.js";
 
 /*
  * SQL importer не пытается быть полноценным SQL engine.
@@ -435,7 +436,7 @@ function createTablePosition(index) {
 // Сразу создаем форму поля, которую используют node, свойства таблицы и DBML generator.
 function createImportedField(name, type, options = {}) {
     return {
-        id: crypto.randomUUID(),
+        id: createId(),
         name,
         type: type || "TEXT",
         pk: Boolean(options.pk),
@@ -515,7 +516,7 @@ function parseCreateTable(statement, errors) {
      * а в React node останутся уже fields, indexes и edges.
      */
     const table = {
-        id: crypto.randomUUID(),
+        id: createId(),
         name: tableIdentifier.name,
         fields: [],
         indexes: [],
@@ -653,7 +654,7 @@ function parseCreateIndex(statement, tables) {
     }
 
     table.indexes.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: indexIdentifier.name,
         columns,
         unique: Boolean(prefix[1])

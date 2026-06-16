@@ -5,6 +5,7 @@ import {
     getProjectShare,
     updateProjectShare
 } from "../lib/api.js";
+import { copyText } from "../utils/copyText.js";
 
 const ACCESS_OPTIONS = [
     {
@@ -108,8 +109,12 @@ export default function ShareSettingsModal({ projectId, open, onClose }) {
             return;
         }
 
-        await navigator.clipboard.writeText(shareUrl);
-        setCopied(true);
+        try {
+            await copyText(shareUrl);
+            setCopied(true);
+        } catch {
+            setError("Не удалось скопировать ссылку. Выделите ее и скопируйте вручную.");
+        }
     }
 
     const viewers = Array.isArray(share?.viewers) ? share.viewers : [];

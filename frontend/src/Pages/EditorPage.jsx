@@ -13,6 +13,7 @@ import ReactFlow, {
 import TableNode from "../nodes/TableNode.jsx";
 import StickyNoteNode from "../nodes/StickyNoteNode.jsx";
 import TopBar from "../components/TopBar.jsx";
+import { createId } from "../utils/createId.js";
 import Sidebar from "../components/Sidebar.jsx";
 import SqlEditor from "../components/SqlEditor.jsx";
 import PropertiesPanel from "../components/PropertiesPanel.jsx";
@@ -54,7 +55,7 @@ const nodeTypes = {
 
 // Новая заметка имеет тот же shape React Flow node, что и заметки из snapshot.
 function createStickyNote(position = { x: 180, y: 160 }) {
-    const noteId = `note-${crypto.randomUUID()}`;
+    const noteId = `note-${createId()}`;
 
     return {
         id: noteId,

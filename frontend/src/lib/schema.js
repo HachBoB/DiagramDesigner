@@ -1,3 +1,5 @@
+import { createId } from "../utils/createId.js";
+
 export const STORAGE_KEY = 'db-designer-studio:v1'
 
 export const COMMON_FIELD_TYPES = [
@@ -97,7 +99,7 @@ export function resolveEdgeHandles(edge, nodes) {
 // A new legacy field starts normalized so every boolean flag is predictable.
 export function createField(overrides = {}) {
   return normalizeField({
-    id: `field-${crypto.randomUUID()}`,
+    id: `field-${createId()}`,
     name: 'new_field',
     type: 'VARCHAR(255)',
     isPrimary: false,
@@ -111,7 +113,7 @@ export function createField(overrides = {}) {
 // A blank legacy table already includes common technical fields for the demo.
 export function createTable({ name = 'new_table', position = { x: 120, y: 120 } } = {}) {
   return {
-    id: `table-${crypto.randomUUID()}`,
+    id: `table-${createId()}`,
     type: 'tableNode',
     position,
     data: {
@@ -506,7 +508,7 @@ function normalizeNode(node) {
     : []
 
   return {
-    id: String(node.id || `table-${crypto.randomUUID()}`),
+    id: String(node.id || `table-${createId()}`),
     type: 'tableNode',
     position: normalizePosition(node.position),
     selected: Boolean(node.selected),
@@ -527,7 +529,7 @@ function normalizeField(field) {
   }
 
   const normalized = {
-    id: String(field.id || `field-${crypto.randomUUID()}`),
+    id: String(field.id || `field-${createId()}`),
     name: typeof field.name === 'string' ? field.name : 'new_field',
     type: typeof field.type === 'string' && field.type.trim() ? field.type : 'TEXT',
     isPrimary: Boolean(field.isPrimary),
@@ -551,7 +553,7 @@ function normalizeEdge(edge) {
   }
 
   return {
-    id: String(edge.id || `edge-${crypto.randomUUID()}`),
+    id: String(edge.id || `edge-${createId()}`),
     source: String(edge.source),
     sourceHandle: edge.sourceHandle ? String(edge.sourceHandle) : undefined,
     target: String(edge.target),

@@ -1,4 +1,5 @@
 import { createRelationEdge } from "./schemaFactory.js";
+import { createId } from "./createId.js";
 
 /*
  * DBML parser читает не полный стандарт DBML, а наш небольшой DBML-like формат редактора.
@@ -81,7 +82,7 @@ function getExistingTableId(existingNodes, tableName) {
         return node.data?.name === tableName;
     });
 
-    return existingNode?.id || crypto.randomUUID();
+    return existingNode?.id || createId();
 }
 
 // Стабильный field id нужен связям: edge привязан к handle поля, а не только к имени.
@@ -94,7 +95,7 @@ function getExistingFieldId(existingNodes, tableName, fieldName) {
         return field.name === fieldName;
     });
 
-    return existingField?.id || crypto.randomUUID();
+    return existingField?.id || createId();
 }
 
 // Index id сохраняем по имени или составу колонок, чтобы UI не пересоздавал карточку индекса.
@@ -112,7 +113,7 @@ function getExistingIndexId(existingNodes, tableName, indexName, columns) {
         return Array.isArray(item.columns) && item.columns.join(",") === normalizedColumns;
     });
 
-    return existingIndex?.id || crypto.randomUUID();
+    return existingIndex?.id || createId();
 }
 
 // Парсим поле отдельно, чтобы ошибки в одной строке не рушили весь Table-блок.
