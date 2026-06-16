@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Bot, CheckCircle2, Cloud, CloudOff, Database, FileJson, FileText, FileUp, Home, Loader2, RotateCcw, Share2 } from "lucide-react";
+import { Bot, CheckCircle2, Cloud, CloudOff, Database, Eye, EyeOff, FileJson, FileText, FileUp, Home, Loader2, RotateCcw, Share2 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle.jsx";
 import ProfileButton from "./ProfileButton.jsx";
 
@@ -20,7 +20,9 @@ export default function TopBar({
                                    onToggleTheme,
                                    saveStatus = "local",
                                    remoteStatus = "local",
-                                   remoteError = ""
+                                   remoteError = "",
+                                   dbmlPanelVisible = true,
+                                   onToggleDbmlPanel
                                }) {
     return (
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-5 dark:border-slate-800 dark:bg-slate-950">
@@ -77,6 +79,16 @@ export default function TopBar({
                     >
                         <Share2 size={16} />
                         Поделиться
+                    </button>
+                )}
+
+                {onToggleDbmlPanel && (
+                    <button
+                        onClick={onToggleDbmlPanel}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        {dbmlPanelVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {dbmlPanelVisible ? "Скрыть DBML" : "Показать DBML"}
                     </button>
                 )}
 

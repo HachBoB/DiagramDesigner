@@ -1,21 +1,29 @@
 import { useState } from "react";
-import { Database, FileCode2, X } from "lucide-react";
+import { Briefcase, FileCode2, GraduationCap, Newspaper, ShoppingCart, X } from "lucide-react";
 import { DB_DIALECTS, DEFAULT_DIALECT } from "../types/databaseTypes.js";
+import { SCHEMA_PATTERNS } from "../utils/schemaFactory.js";
+
+const PATTERN_ICONS = {
+    starter: ShoppingCart,
+    crm: Briefcase,
+    education: GraduationCap,
+    content: Newspaper
+};
 
 const PROJECT_OPTIONS = [
-    {
-        id: "starter",
-        icon: Database,
-        title: "Готовый паттерн",
-        description: "Стартовая схема интернет-магазина с users, orders, products и order_items.",
-        badge: "Шаблон"
-    },
+    ...SCHEMA_PATTERNS.map((pattern) => ({
+        ...pattern,
+        icon: PATTERN_ICONS[pattern.id] || FileCode2
+    })),
     {
         id: "empty",
         icon: FileCode2,
         title: "Пустой проект",
+        projectName: "Пустой проект",
         description: "Чистый canvas и пустой DBML-код, чтобы начать схему с нуля.",
-        badge: "Blank"
+        badge: "Blank",
+        tablesCount: 0,
+        relationsCount: 0
     }
 ];
 
@@ -39,11 +47,11 @@ export default function CreateProjectModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6">
-            <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-800">
                     <div>
                         <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                            <Database size={13} />
+                            <ShoppingCart size={13} />
                             Новый проект
                         </div>
 
@@ -69,14 +77,14 @@ export default function CreateProjectModal({
                     </button>
                 </div>
 
-                <div className="p-6">
+                <div className="max-h-[calc(92vh-132px)] overflow-y-auto p-6">
                     {error && (
                         <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
                             {error}
                         </div>
                     )}
 
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         {PROJECT_OPTIONS.map((option) => {
                             const Icon = option.icon;
 
@@ -86,7 +94,7 @@ export default function CreateProjectModal({
                                     type="button"
                                     onClick={() => onCreate({ mode: option.id, dialect })}
                                     disabled={isCreating}
-                                    className="group flex min-h-[220px] flex-col rounded-3xl border border-slate-200 bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-500 dark:hover:bg-slate-800"
+                                    className="group flex min-h-[240px] flex-col rounded-3xl border border-slate-200 bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-500 dark:hover:bg-slate-800"
                                 >
                                     <div className="mb-4 flex items-center justify-between gap-3">
                                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20 transition group-hover:scale-105">
@@ -105,6 +113,15 @@ export default function CreateProjectModal({
                                     <p className="mt-2 flex-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
                                         {option.description}
                                     </p>
+
+                                    <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                        <span className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-900">
+                                            Таблиц: {option.tablesCount}
+                                        </span>
+                                        <span className="rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-900">
+                                            Связей: {option.relationsCount}
+                                        </span>
+                                    </div>
 
                                     <div className="mt-5 inline-flex items-center rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 transition group-hover:bg-blue-600 group-hover:text-white dark:bg-slate-800 dark:text-slate-200 dark:group-hover:bg-blue-500">
                                         {isCreating ? "Создаём..." : "Выбрать"}

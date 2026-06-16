@@ -9,7 +9,7 @@ import ReactFlow, {
     useEdgesState,
     useNodesState
 } from "reactflow";
-import { CheckCircle2, CloudOff, Database, Eye, FileJson, FileText, FileUp, Loader2, Lock, RotateCcw, Unlock } from "lucide-react";
+import { CheckCircle2, CloudOff, Database, Eye, EyeOff, FileJson, FileText, FileUp, Loader2, Lock, RotateCcw, Unlock } from "lucide-react";
 
 import TableNode from "../nodes/TableNode.jsx";
 import StickyNoteNode from "../nodes/StickyNoteNode.jsx";
@@ -56,7 +56,7 @@ function createStickyNote(position = { x: 180, y: 160 }) {
         position,
         data: {
             noteId,
-            text: "New note"
+            text: "Новая заметка"
         }
     };
 }
@@ -437,6 +437,7 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
     const [notes, setNotes] = useState(() => Array.isArray(schema.notes) ? schema.notes : []);
     const [detailLevel, setDetailLevel] = useState("all-fields");
     const [showGrid, setShowGrid] = useState(true);
+    const [dbmlPanelVisible, setDbmlPanelVisible] = useState(true);
     const [relationsHighlighted, setRelationsHighlighted] = useState(false);
     const [schemaCode, setSchemaCode] = useState(project.schema_code || generateDBML(schema.nodes, schema.edges));
     const [schemaErrors, setSchemaErrors] = useState([]);
@@ -829,6 +830,13 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
                     <ThemeToggle theme={theme} onToggle={onToggleTheme} />
                     <ProfileButton />
                     <button
+                        onClick={() => setDbmlPanelVisible((value) => !value)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        {dbmlPanelVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {dbmlPanelVisible ? "Скрыть DBML" : "Показать DBML"}
+                    </button>
+                    <button
                         onClick={resetSchema}
                         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                     >
@@ -865,13 +873,25 @@ function SharedEditableProject({ token, project, accessPassword, theme, onToggle
                     onDeleteSelected={deleteSelected}
                     selectedTable={selectedTable || selectedRelation}
                 />
-                <SqlEditor
-                    ref={sqlEditorRef}
-                    value={schemaCode}
-                    onChange={handleSchemaCodeChange}
-                    errors={schemaErrors}
-                />
+                {dbmlPanelVisible && (
+                    <SqlEditor
+                        ref={sqlEditorRef}
+                        value={schemaCode}
+                        onChange={handleSchemaCodeChange}
+                        errors={schemaErrors}
+                    />
+                )}
                 <main className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    {!dbmlPanelVisible && (
+                        <button
+                            type="button"
+                            onClick={() => setDbmlPanelVisible(true)}
+                            className="absolute left-4 top-4 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-sm font-bold text-slate-700 shadow-soft backdrop-blur hover:bg-white dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-900"
+                        >
+                            Показать DBML
+                        </button>
+                    )}
+
                     <ReactFlow
                         nodes={[...flowNodes, ...flowNotes]}
                         edges={visibleEdges}

@@ -27,8 +27,10 @@ import { DEFAULT_DIALECT } from "../types/databaseTypes.js";
 import {
     createEmptySchema,
     createRelationEdge,
+    createSchemaPattern,
     createStarterSchema,
     createTableNode,
+    getSchemaPattern,
     hasSchemaSnapshot,
     normalizeSchemaSnapshot
 } from "../utils/schemaFactory.js";
@@ -60,7 +62,7 @@ function createStickyNote(position = { x: 180, y: 160 }) {
         position,
         data: {
             noteId,
-            text: "New note"
+            text: "Новая заметка"
         }
     };
 }
@@ -127,13 +129,17 @@ function getEdgeForDetailLevel(edge, nodes, detailLevel) {
  * Гостевой editor выбирает между snapshot из localStorage, пустым режимом
  * создания и стартовой схемой по умолчанию.
  */
-function resolveInitialLocalSchema(saved, createMode) {
+function resolveInitialLocalSchema(saved, createMode, createSchemaJson = null) {
+    if (hasSchemaSnapshot(createSchemaJson)) {
+        return normalizeSchemaSnapshot(createSchemaJson);
+    }
+
     if (createMode === "empty") {
         return createEmptySchema();
     }
 
-    if (createMode === "starter") {
-        return createStarterSchema();
+    if (createMode) {
+        return createSchemaPattern(createMode);
     }
 
     return hasSchemaSnapshot(saved)
@@ -160,8 +166,12 @@ function EditorPageContent({ theme, onToggleTheme }) {
     const navigate = useNavigate();
     const saved = loadFromStorage();
     const createMode = !projectId ? location.state?.createMode : null;
-    const createDialect = !projectId ? location.state?.createDialect : null;
-    const starter = resolveInitialLocalSchema(saved, createMode);
+    const initialCreateMode = location.state?.createMode || null;
+    const createDialect = location.state?.createDialect || null;
+    const createProjectName = location.state?.createProjectName || null;
+    const createSchemaJson = location.state?.createSchemaJson || null;
+    const createSchemaCode = location.state?.createSchemaCode || null;
+    const starter = resolveInitialLocalSchema(saved, createMode || initialCreateMode, createSchemaJson);
 
     const sqlEditorRef = useRef(null);
     // Canvas и текстовый редактор изменяют одну схему; маркер источника не дает им спорить в эффектах.
@@ -170,11 +180,11 @@ function EditorPageContent({ theme, onToggleTheme }) {
     const hasLoadedRemoteProjectRef = useRef(!projectId);
 
     const [projectName, setProjectName] = useState(() => {
-        const explicitProjectName = createMode === "empty"
+        const explicitProjectName = createProjectName || (createMode === "empty"
             ? "Пустой проект"
-            : createMode === "starter"
-                ? "Новая схема базы данных"
-                : null;
+            : createMode
+                ? getSchemaPattern(createMode).projectName
+                : null);
 
         if (explicitProjectName) {
             return explicitProjectName;
@@ -192,6 +202,7 @@ function EditorPageContent({ theme, onToggleTheme }) {
     const [notes, setNotes] = useState(() => Array.isArray(starter.notes) ? starter.notes : []);
     const [detailLevel, setDetailLevel] = useState(saved?.detailLevel || "all-fields");
     const [showGrid, setShowGrid] = useState(saved?.showGrid !== false);
+    const [dbmlPanelVisible, setDbmlPanelVisible] = useState(saved?.dbmlPanelVisible !== false);
     const [relationsHighlighted, setRelationsHighlighted] = useState(false);
 
     const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -199,7 +210,7 @@ function EditorPageContent({ theme, onToggleTheme }) {
     const [recordsTableId, setRecordsTableId] = useState(null);
 
     const [schemaCode, setSchemaCode] = useState(() =>
-        createMode ? generateDBML(starter.nodes, starter.edges) : saved?.schemaCode || generateDBML(starter.nodes, starter.edges)
+        createSchemaCode || (createMode ? generateDBML(starter.nodes, starter.edges) : saved?.schemaCode || generateDBML(starter.nodes, starter.edges))
     );
 
     const [schemaErrors, setSchemaErrors] = useState([]);
@@ -417,9 +428,10 @@ function EditorPageContent({ theme, onToggleTheme }) {
             edges,
             notes,
             detailLevel,
-            showGrid
+            showGrid,
+            dbmlPanelVisible
         });
-    }, [projectName, dialect, schemaCode, nodes, edges, notes, detailLevel, showGrid]);
+    }, [projectName, dialect, schemaCode, nodes, edges, notes, detailLevel, showGrid, dbmlPanelVisible]);
 
     // Отдельная загрузка remote-проекта заменяет локальный starter только после успешного ответа API.
     useEffect(() => {
@@ -912,6 +924,8 @@ function EditorPageContent({ theme, onToggleTheme }) {
                 saveStatus={saveStatus}
                 remoteStatus={remoteStatus}
                 remoteError={remoteError}
+                dbmlPanelVisible={dbmlPanelVisible}
+                onToggleDbmlPanel={() => setDbmlPanelVisible((value) => !value)}
             />
 
             <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -921,14 +935,26 @@ function EditorPageContent({ theme, onToggleTheme }) {
                     selectedTable={selectedTable || selectedRelation}
                 />
 
-                <SqlEditor
-                    ref={sqlEditorRef}
-                    value={schemaCode}
-                    onChange={handleSchemaCodeChange}
-                    errors={schemaErrors}
-                />
+                {dbmlPanelVisible && (
+                    <SqlEditor
+                        ref={sqlEditorRef}
+                        value={schemaCode}
+                        onChange={handleSchemaCodeChange}
+                        errors={schemaErrors}
+                    />
+                )}
 
                 <main className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    {!dbmlPanelVisible && (
+                        <button
+                            type="button"
+                            onClick={() => setDbmlPanelVisible(true)}
+                            className="absolute left-4 top-4 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-sm font-bold text-slate-700 shadow-soft backdrop-blur hover:bg-white dark:border-slate-700 dark:bg-slate-950/90 dark:text-slate-200 dark:hover:bg-slate-900"
+                        >
+                            Показать DBML
+                        </button>
+                    )}
+
                     <div className="absolute inset-0">
                         <ReactFlow
                             nodes={[...flowNodes, ...flowNotes]}

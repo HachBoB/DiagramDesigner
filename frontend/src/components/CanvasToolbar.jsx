@@ -4,17 +4,17 @@ import { Check, GitBranch, Grid2x2, KeyRound, StickyNote, Table2 } from "lucide-
 const DETAIL_LEVELS = [
     {
         value: "table-names",
-        label: "Table names",
+        label: "Имена таблиц",
         icon: Table2
     },
     {
         value: "keys-only",
-        label: "Keys only",
+        label: "Только ключи",
         icon: KeyRound
     },
     {
         value: "all-fields",
-        label: "All fields",
+        label: "Все поля",
         icon: Table2
     }
 ];
@@ -85,7 +85,7 @@ export default function CanvasToolbar({
                     <ToolbarButton
                         active={relationsHighlighted}
                         onClick={onToggleRelations}
-                        title={relationsHighlighted ? "Clear relation highlight" : "Highlight all relations"}
+                        title={relationsHighlighted ? "Спрятать связи" : "Подсветить связи"}
                         count={relationsCount}
                     >
                         <GitBranch size={17} />
@@ -95,7 +95,7 @@ export default function CanvasToolbar({
                 {onAddNote && (
                     <ToolbarButton
                         onClick={onAddNote}
-                        title="Add sticky note"
+                        title="Добавить заметку"
                         count={notesCount}
                     >
                         <StickyNote size={17} />
@@ -106,7 +106,7 @@ export default function CanvasToolbar({
                     <ToolbarButton
                         active={gridVisible}
                         onClick={onToggleGrid}
-                        title={gridVisible ? "Hide grid" : "Show grid"}
+                        title={gridVisible ? "Спрятать сетку" : "Показать сетку"}
                     >
                         <Grid2x2 size={17} />
                     </ToolbarButton>
@@ -170,7 +170,7 @@ export default function CanvasToolbar({
                 </div>
 
                 <div className="hidden items-center gap-1.5 border-l border-slate-200 pl-2 pr-1 text-[11px] font-semibold text-slate-500 sm:flex dark:border-slate-700 dark:text-slate-400">
-                    <span>Detail level:</span>
+                    <span>Уровень детализации:</span>
                     <span className="text-slate-700 dark:text-slate-200">
                         {currentDetailLevel.label}
                     </span>

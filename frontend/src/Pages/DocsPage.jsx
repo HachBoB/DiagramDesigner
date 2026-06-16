@@ -200,13 +200,6 @@ function DocsSidebar() {
                         </a>
                     ))}
                 </nav>
-
-                <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
-                    <div className="rounded-2xl bg-slate-50 p-3 text-xs font-semibold leading-6 text-slate-500 dark:bg-slate-950 dark:text-slate-400">
-                        Схема хранится как код и JSON, поэтому canvas, экспорт и совместный доступ
-                        работают с одной структурой проекта.
-                    </div>
-                </div>
             </div>
         </aside>
     );

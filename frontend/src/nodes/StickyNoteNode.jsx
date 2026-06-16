@@ -35,7 +35,7 @@ export default function StickyNoteNode({ data, selected }) {
             <div className="flex items-center justify-between gap-2 border-b border-amber-200 px-3 py-2 text-xs font-extrabold uppercase text-amber-900 dark:border-amber-700 dark:text-amber-100">
                 <div className="flex items-center gap-2">
                     <StickyNote size={15} />
-                    Note
+                    Заметка
                 </div>
 
                 {typeof data.onDelete === "function" && (

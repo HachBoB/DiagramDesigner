@@ -36,7 +36,11 @@ import {
 } from "../lib/api.js";
 import { DB_DIALECTS, DEFAULT_DIALECT } from "../types/databaseTypes.js";
 import { generateDBML } from "../utils/sqlGenerator.js";
-import { createEmptySchema, createStarterSchema } from "../utils/schemaFactory.js";
+import {
+    createEmptySchema,
+    createSchemaPattern,
+    getSchemaPattern
+} from "../utils/schemaFactory.js";
 
 const demoProjects = [
     {
@@ -166,21 +170,28 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
 
     // Для гостя открываем локальный редактор, для аккаунта сразу создаем remote-проект.
     async function handleCreateProject({ mode = "starter", dialect = DEFAULT_DIALECT } = {}) {
+        const selectedPattern = mode === "empty" ? null : getSchemaPattern(mode);
         // Одинаковый snapshot используем и при local route, и в теле POST /projects.
-        const schema = mode === "empty" ? createEmptySchema() : createStarterSchema();
+        const schema = mode === "empty" ? createEmptySchema() : createSchemaPattern(mode);
         const schemaJson = {
             nodes: schema.nodes,
             edges: schema.edges,
             notes: Array.isArray(schema.notes) ? schema.notes : []
         };
+        const schemaCode = generateDBML(schemaJson.nodes, schemaJson.edges);
+        const projectName = mode === "empty" ? "Пустой проект" : selectedPattern.projectName;
 
         if (!hasSession) {
-            // Без аккаунта схема будет собрана самим EditorPage из createMode/createDialect.
+            // Без аккаунта передаем готовый snapshot прямо в редактор, чтобы его
+            // не заменил старый localStorage или дефолтный starter.
             setIsCreateModalOpen(false);
             navigate("/editor", {
                 state: {
                     createMode: mode,
-                    createDialect: dialect
+                    createDialect: dialect,
+                    createProjectName: projectName,
+                    createSchemaJson: schemaJson,
+                    createSchemaCode: schemaCode
                 }
             });
             return;
@@ -192,14 +203,25 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         try {
             // Для backend передаем и текстовую, и визуальную форму схемы.
             const project = await createProject({
-                name: mode === "empty" ? "Пустой проект" : "Новая схема базы данных",
+                name: projectName,
+                description: selectedPattern?.description || null,
                 dialect,
-                schema_code: generateDBML(schemaJson.nodes, schemaJson.edges),
+                schema_code: schemaCode,
                 schema_json: schemaJson
             });
 
             setIsCreateModalOpen(false);
-            navigate(`/editor/${project.id}`);
+            // Пока remote-проект догружается, редактор уже показывает выбранный
+            // паттерн, а не локальный starter интернет-магазина.
+            navigate(`/editor/${project.id}`, {
+                state: {
+                    createMode: mode,
+                    createDialect: dialect,
+                    createProjectName: projectName,
+                    createSchemaJson: schemaJson,
+                    createSchemaCode: schemaCode
+                }
+            });
         } catch (requestError) {
             setError(getApiErrorMessage(requestError, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїСЂРѕРµРєС‚."));
         } finally {
@@ -207,8 +229,8 @@ export default function ProjectsPage({ theme, onToggleTheme }) {
         }
     }
 
-    function handleCreateProjectAction(mode = "starter") {
-        return handleCreateProject(mode);
+    function handleCreateProjectAction(options = {}) {
+        return handleCreateProject(typeof options === "string" ? { mode: options } : options);
         /*
         if (!hasSession) {
             navigate("/editor");

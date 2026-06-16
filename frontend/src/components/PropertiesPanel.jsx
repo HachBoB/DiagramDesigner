@@ -392,7 +392,7 @@ export default function PropertiesPanel({
                             className="hidden"
                         />
 
-                        <label className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm text-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                        <label className="flex items-center gap-2 hidden rounded-xl bg-white px-3 py-2 text-sm text-slate-700 dark:bg-slate-950 dark:text-slate-200">
                             <input
                                 type="checkbox"
                                 checked={Boolean(indexItem.unique)}
