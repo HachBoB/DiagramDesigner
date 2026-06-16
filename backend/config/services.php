@@ -30,6 +30,8 @@ return [
         'connect_timeout' => (int) env('NVIDIA_NIM_CONNECT_TIMEOUT', 8),
         'max_tokens' => (int) env('NVIDIA_NIM_MAX_TOKENS', 550),
         'edit_max_tokens' => (int) env('NVIDIA_NIM_EDIT_MAX_TOKENS', 2200),
+        'empty_retries' => (int) env('NVIDIA_NIM_EMPTY_RETRIES', 1),
+        'fallback_models' => env('NVIDIA_NIM_FALLBACK_MODELS', 'nvidia/llama-3.1-nemotron-nano-8b-v1'),
         'execution_time_limit' => (int) env('NVIDIA_NIM_EXECUTION_TIME_LIMIT', 75),
         'verify_ssl' => env('NVIDIA_NIM_VERIFY_SSL', true),
     ],

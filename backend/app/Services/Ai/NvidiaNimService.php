@@ -34,10 +34,41 @@ class NvidiaNimService
             $request = $request->withoutVerifying();
         }
 
+        $lastEmptyReason = null;
+
+        foreach ($this->modelsToTry() as $model) {
+            for ($attempt = 1; $attempt <= $this->attemptsCount(); $attempt++) {
+                $response = $this->sendCompletionRequest($request, $payload, $mode, $model);
+                $content = $this->extractTextContent($response->json());
+
+                if (is_string($content) && trim($content) !== '') {
+                    // В edit-режиме frontend ждет не только текст, но и полную замену DBML-like кода.
+                    if ($mode === 'edit') {
+                        return [
+                            ...$this->parseEditResponse($content),
+                            'model' => $model,
+                        ];
+                    }
+
+                    return [
+                        'message' => trim($content),
+                        'model' => $model,
+                    ];
+                }
+
+                $lastEmptyReason = $this->emptyResponseReason($response->json(), $model, $attempt);
+            }
+        }
+
+        throw new RuntimeException($lastEmptyReason ?? 'NVIDIA NIM returned an empty response.');
+    }
+
+    private function sendCompletionRequest($request, array $payload, string $mode, string $model)
+    {
         try {
             // NIM принимает OpenAI-compatible messages, поэтому prompt строится как chat completion.
             $response = $request->post($this->endpoint('/chat/completions'), [
-                'model' => config('services.nvidia_nim.model'),
+                'model' => $model,
                 'temperature' => 0.25,
                 'max_tokens' => $mode === 'edit'
                     ? config('services.nvidia_nim.edit_max_tokens')
@@ -72,31 +103,61 @@ class NvidiaNimService
                 ?: $response->body();
 
             throw new RuntimeException(sprintf(
-                'NVIDIA NIM вернул ошибку HTTP %s: %s',
+                'NVIDIA NIM вернул ошибку HTTP %s для модели %s: %s',
                 $response->status(),
+                $model,
                 mb_substr((string) $providerMessage, 0, 700)
             ), previous: $exception);
         }
 
-        // Контракт OpenAI-compatible ответа кладет текст модели в choices[0].message.content.
-        $content = data_get($response->json(), 'choices.0.message.content');
+        return $response;
+    }
 
-        if (! is_string($content) || trim($content) === '') {
-            throw new RuntimeException('NVIDIA NIM returned an empty response.');
+    private function extractTextContent(?array $body): ?string
+    {
+        // Основной OpenAI-compatible формат хранит ответ в message.content.
+        // choices[0].text оставлен запасным вариантом для моделей с completion-like форматом.
+        return data_get($body, 'choices.0.message.content')
+            ?: data_get($body, 'choices.0.text');
+    }
+
+    private function emptyResponseReason(?array $body, string $model, int $attempt): string
+    {
+        $finishReason = data_get($body, 'choices.0.finish_reason');
+        $usage = data_get($body, 'usage');
+
+        $reason = sprintf(
+            'NVIDIA NIM returned an empty response. Model: %s, attempt: %s.',
+            $model,
+            $attempt
+        );
+
+        if ($finishReason) {
+            $reason .= ' Finish reason: '.$finishReason.'.';
         }
 
-        // В edit-режиме frontend ждет не только текст, но и полную замену DBML-like кода.
-        if ($mode === 'edit') {
-            return [
-                ...$this->parseEditResponse($content),
-                'model' => config('services.nvidia_nim.model'),
-            ];
+        if (is_array($usage)) {
+            $reason .= ' Usage: '.json_encode($usage, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES).'.';
         }
 
-        return [
-            'message' => trim($content),
-            'model' => config('services.nvidia_nim.model'),
+        $reason .= ' Tried models: '.implode(', ', $this->modelsToTry()).'.';
+
+        return $reason;
+    }
+
+    private function attemptsCount(): int
+    {
+        return max(1, 1 + (int) config('services.nvidia_nim.empty_retries', 1));
+    }
+
+    private function modelsToTry(): array
+    {
+        $models = [
+            (string) config('services.nvidia_nim.model'),
+            ...array_map('trim', explode(',', (string) config('services.nvidia_nim.fallback_models', ''))),
         ];
+
+        return array_values(array_unique(array_filter($models)));
     }
 
     private function endpoint(string $path): string
